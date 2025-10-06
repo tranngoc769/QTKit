@@ -175,21 +175,21 @@ class SimpleTimestampViewer(QMainWindow):
             # Create tooltip text
             tooltip_text = f"🌍 GMT: {gmt_str}\n🇻🇳 VN:  {vn_str}"
             
-            # Show at cursor position
+            # Hide any existing tooltip first
+            QToolTip.hideText()
+            
+            # Show at cursor position with consistent timing
             cursor_pos = QCursor.pos()
             QToolTip.showText(cursor_pos, tooltip_text)
             
-            # Auto hide after 4 seconds
-            QTimer.singleShot(4000, QToolTip.hideText)
+            # Set consistent auto-hide timer (3 seconds)
+            if hasattr(self, 'tooltip_timer'):
+                self.tooltip_timer.stop()
             
-            # Show tray notification
-            if self.tray_icon:
-                self.tray_icon.showMessage(
-                    "Timestamp Detected!",
-                    f"Converted: {timestamp_str}",
-                    QSystemTrayIcon.Information,
-                    2000
-                )
+            self.tooltip_timer = QTimer()
+            self.tooltip_timer.setSingleShot(True)
+            self.tooltip_timer.timeout.connect(QToolTip.hideText)
+            self.tooltip_timer.start(3000)  # 3 seconds consistent
                 
         except Exception as e:
             print(f"Error showing tooltip: {e}")
@@ -255,6 +255,8 @@ class SimpleTimestampViewer(QMainWindow):
         """Quit application"""
         if hasattr(self, 'clipboard_timer'):
             self.clipboard_timer.stop()
+        if hasattr(self, 'tooltip_timer'):
+            self.tooltip_timer.stop()
         if hasattr(self, 'cmd_monitor'):
             self.cmd_monitor.stop()
         if hasattr(self, 'tray_icon'):
