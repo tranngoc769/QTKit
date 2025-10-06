@@ -6,7 +6,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                               QWidget, QLabel, QSystemTrayIcon, QMenu, QToolTip, 
                               QCheckBox, QSpinBox, QGroupBox, QPushButton)
-from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings
+from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint
 from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor
 from pynput import keyboard
 
@@ -314,9 +314,11 @@ class SimpleTimestampViewer(QMainWindow):
             # Hide any existing tooltip first
             QToolTip.hideText()
             
-            # Show at cursor position with consistent timing
+            # Show at cursor position with offset (above and to the right)
             cursor_pos = QCursor.pos()
-            QToolTip.showText(cursor_pos, tooltip_text)
+            # Điều chỉnh vị trí: sang phải 40px, lên trên 70px (không che timestamp)
+            tooltip_pos = QPoint(cursor_pos.x() + 40, cursor_pos.y() - 70)
+            QToolTip.showText(tooltip_pos, tooltip_text)
             
             # Set consistent auto-hide timer (3 seconds)
             if hasattr(self, 'tooltip_timer'):
