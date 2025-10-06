@@ -317,7 +317,7 @@ class SimpleTimestampViewer(QMainWindow):
             # Show at cursor position with offset (above and to the right)
             cursor_pos = QCursor.pos()
             # Điều chỉnh vị trí: sang phải 40px, lên trên 70px (không che timestamp)
-            tooltip_pos = QPoint(cursor_pos.x() + 40, cursor_pos.y() - 70)
+            tooltip_pos = QPoint(cursor_pos.x() + 40, cursor_pos.y() - 90)
             QToolTip.showText(tooltip_pos, tooltip_text)
             
             # Set consistent auto-hide timer (3 seconds)
