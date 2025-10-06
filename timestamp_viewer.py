@@ -149,22 +149,18 @@ class SimpleTimestampViewer(QMainWindow):
 
     def is_timestamp(self, text):
         """Check if text is a timestamp"""
-        # Unix timestamp (10 or 13 digits)
-        if re.match(r'^\d{10}$', text) or re.match(r'^\d{13}$', text):
-            return True
-            
-        # Common timestamp formats
-        patterns = [
-            r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}',  # ISO 8601
-            r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}',   # SQL format  
-            r'^\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}',   # US format
-        ]
+        # Kiểm tra độ dài: 10-20 ký tự
+        if len(text) < 10 or len(text) > 20:
+            return False
         
-        for pattern in patterns:
-            if re.match(pattern, text):
-                return True
-                
-        return False
+        # Kiểm tra xem có phải là số float không
+        try:
+            float(text)
+        except ValueError:
+            return False
+        
+        # Nếu là số float hợp lệ và đúng độ dài, coi là timestamp
+        return True
     
     def show_tooltip(self, timestamp_str):
         """Show tooltip at cursor position"""
@@ -197,46 +193,27 @@ class SimpleTimestampViewer(QMainWindow):
     def convert_timestamp(self, timestamp_str):
         """Convert timestamp to GMT and VN time"""
         try:
-            if re.match(r'^\d{10}$', timestamp_str):
-                # Unix timestamp (seconds)
-                unix_time = int(timestamp_str)
-                gmt_dt = datetime.utcfromtimestamp(unix_time)
-                vn_dt = datetime.fromtimestamp(unix_time)
-                
-            elif re.match(r'^\d{13}$', timestamp_str):
-                # Unix timestamp (milliseconds)
-                unix_time = int(timestamp_str) / 1000
-                gmt_dt = datetime.utcfromtimestamp(unix_time)
-                vn_dt = datetime.fromtimestamp(unix_time)
-                
-            else:
-                # Try to parse other formats
-                try:
-                    if 'T' in timestamp_str:
-                        clean_timestamp = re.sub(r'[+-]\d{2}:?\d{2}$|Z$', '', timestamp_str)
-                        dt = datetime.fromisoformat(clean_timestamp)
-                    else:
-                        # Try common formats
-                        formats = ['%Y-%m-%d %H:%M:%S', '%m/%d/%Y %H:%M:%S', '%d-%m-%Y %H:%M:%S']
-                        dt = None
-                        for fmt in formats:
-                            try:
-                                dt = datetime.strptime(timestamp_str, fmt)
-                                break
-                            except ValueError:
-                                continue
-                        if not dt:
-                            raise ValueError("Unable to parse timestamp")
-                    
-                    gmt_dt = dt
-                    vn_dt = dt
-                    
-                except ValueError:
-                    return "Invalid format", "Invalid format"
+            # Parse as float
+            unix_time = float(timestamp_str)
             
-            # Format output
-            gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S')
-            vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S')
+            # Kiểm tra xem có phần thập phân không
+            has_decimal = '.' in timestamp_str
+            
+            # Nếu số lớn hơn 1e12, coi như milliseconds
+            if unix_time > 1e12:
+                unix_time = unix_time / 1000
+            
+            # Convert to datetime
+            gmt_dt = datetime.utcfromtimestamp(unix_time)
+            vn_dt = datetime.fromtimestamp(unix_time)
+            
+            # Format output - hiển thị millisecond nếu có phần thập phân
+            if has_decimal:
+                gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Cắt bớt microsecond thành millisecond
+                vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]    # Cắt bớt microsecond thành millisecond
+            else:
+                gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S')
+                vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S')
             
             return gmt_str, vn_str
             
