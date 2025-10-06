@@ -4,7 +4,7 @@ import os
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
-from timestamp_viewer import TimestampViewer
+from timestamp_viewer import SimpleTimestampViewer
 
 def main():
     # Tạo QApplication
@@ -24,7 +24,7 @@ def main():
         AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
     
     # Tạo main viewer object
-    viewer = TimestampViewer()
+    viewer = SimpleTimestampViewer()
     
     print("🚀 Timestamp Viewer đã khởi động - chạy ngầm...")
     print("📋 Copy timestamp → Hiển thị ngay tại vị trí chuột!")
