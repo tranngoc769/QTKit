@@ -71,6 +71,14 @@ class SimpleTimestampViewer(QMainWindow):
         self.setup_ui()
         self.setup_tray()
         self.setup_cmd_c_monitoring()
+        
+        # Show config window on first run
+        print(f"🔍 First run status: {self.first_run}")
+        if self.first_run:
+            print("🎯 Showing first run welcome...")
+            self.show_first_run_welcome()
+        else:
+            print("👻 Not first run - running in background")
     
     def load_settings(self):
         """Load settings from QSettings"""
@@ -78,6 +86,7 @@ class SimpleTimestampViewer(QMainWindow):
         self.decimal_places = self.settings.value("decimal_places", 3, type=int)
         self.show_full_decimal = self.settings.value("show_full_decimal", False, type=bool)
         self.detect_mode = self.settings.value("detect_mode", False, type=bool)
+        self.first_run = self.settings.value("first_run", True, type=bool)
     
     def save_settings(self):
         """Save settings to QSettings"""
@@ -85,6 +94,7 @@ class SimpleTimestampViewer(QMainWindow):
         self.settings.setValue("decimal_places", self.decimal_places)
         self.settings.setValue("show_full_decimal", self.show_full_decimal)
         self.settings.setValue("detect_mode", self.detect_mode)
+        self.settings.setValue("first_run", False)
         
     def setup_ui(self):
         """Setup configuration UI"""
@@ -96,7 +106,15 @@ class SimpleTimestampViewer(QMainWindow):
         layout = QVBoxLayout(central_widget)
         
         # Title
-        title = QLabel("🕐 Timestamp Viewer - Cấu hình")
+        if hasattr(self, 'first_run') and self.first_run:
+            title = QLabel("🎉 Chào mừng đến với Timestamp Viewer!")
+            welcome_info = QLabel("Ứng dụng sẽ tự động hiển thị thời gian khi bạn copy timestamp.\nHãy cấu hình các tùy chọn dưới đây:")
+            welcome_info.setStyleSheet("color: #27ae60; text-align: center; margin: 10px;")
+            welcome_info.setAlignment(Qt.AlignCenter)
+            layout.addWidget(welcome_info)
+        else:
+            title = QLabel("🕐 Timestamp Viewer - Cấu hình")
+        
         title.setStyleSheet("font-size: 18px; font-weight: bold; text-align: center; margin: 20px;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
@@ -154,9 +172,15 @@ class SimpleTimestampViewer(QMainWindow):
         # Buttons
         button_layout = QHBoxLayout()
         
-        hide_btn = QPushButton("Ẩn cửa sổ")
-        hide_btn.clicked.connect(self.hide)
-        button_layout.addWidget(hide_btn)
+        if hasattr(self, 'first_run') and self.first_run:
+            start_btn = QPushButton("🚀 Bắt đầu sử dụng")
+            start_btn.clicked.connect(self.start_using)
+            start_btn.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 8px;")
+            button_layout.addWidget(start_btn)
+        else:
+            hide_btn = QPushButton("Ẩn cửa sổ")
+            hide_btn.clicked.connect(self.hide)
+            button_layout.addWidget(hide_btn)
         
         quit_btn = QPushButton("Thoát ứng dụng")
         quit_btn.clicked.connect(self.quit_app)
@@ -167,6 +191,57 @@ class SimpleTimestampViewer(QMainWindow):
         
         # Update UI state
         self.update_decimal_ui_state()
+    
+    def show_first_run_welcome(self):
+        """Show welcome popup for first run"""
+        print("📱 Setting up first run welcome...")
+        
+        # Make sure dock icon is visible for first run on macOS
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                print("🍎 Setting macOS app policy to Regular...")
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            except ImportError:
+                print("⚠️ AppKit not available")
+        
+        # Show the main config window with delay to ensure it appears
+        print("🪟 Showing window...")
+        self.show()
+        self.raise_()  # Bring to front
+        self.activateWindow()  # Focus the window
+        
+        # Force window to be visible and on top
+        self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+        
+        print("🎉 First run detected - config window should be visible now!")
+    
+    def start_using(self):
+        """Start using the app (for first run)"""
+        # Hide dock icon on macOS after first setup
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+            except ImportError:
+                pass
+        
+        self.hide()
+        print("✅ Configuration saved! App is now running in background.")
+    
+    def show_config(self):
+        """Show config window from tray menu"""
+        # Temporarily show dock icon on macOS to display window
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            except ImportError:
+                pass
+        
+        self.show()
+        self.raise_()
+        self.activateWindow()
         
     def setup_tray(self):
         """Setup system tray"""
@@ -184,7 +259,7 @@ class SimpleTimestampViewer(QMainWindow):
         tray_menu = QMenu()
         
         config_action = QAction("⚙️ Cấu hình", self)
-        config_action.triggered.connect(self.show)
+        config_action.triggered.connect(self.show_config)
         tray_menu.addAction(config_action)
         
         quit_action = QAction("Quit", self)
@@ -380,6 +455,14 @@ class SimpleTimestampViewer(QMainWindow):
     def closeEvent(self, event):
         """Handle close event"""
         if self.tray_icon and self.tray_icon.isVisible():
+            # Hide dock icon again on macOS when closing config window
+            if sys.platform == "darwin" and not self.first_run:
+                try:
+                    import AppKit
+                    AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+                except ImportError:
+                    pass
+            
             self.hide()
             event.ignore()
         else:
@@ -404,16 +487,22 @@ def main():
     app.setApplicationName("Simple Timestamp Viewer")
     app.setQuitOnLastWindowClosed(False)
     
-    # Hide dock icon on macOS
-    if sys.platform == "darwin":
+    # Check for reset flag
+    if "--reset-first-run" in sys.argv:
+        settings = QSettings("TimestampViewer", "Settings")
+        settings.setValue("first_run", True)
+        print("🔄 Reset first_run flag!")
+    
+    # Create viewer first
+    viewer = SimpleTimestampViewer()
+    
+    # Hide dock icon on macOS only after first run
+    if sys.platform == "darwin" and not viewer.first_run:
         try:
             import AppKit
             AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
         except ImportError:
             pass
-    
-    # Create viewer
-    viewer = SimpleTimestampViewer()
     
     print("🚀 Simple Timestamp Viewer started!")
     print("📋 Copy any timestamp to see the magic!")
