@@ -123,7 +123,7 @@ class SimpleTimestampViewer(QMainWindow):
         decimal_layout.addLayout(decimal_places_layout)
         
         # Full decimal checkbox
-        self.show_full_decimal_cb = QCheckBox("Hiển thị đầy đủ millisecond (bỏ qua cài đặt trên)")
+        self.show_full_decimal_cb = QCheckBox("Hiển thị toàn bộ phần thập phân gốc (không padding - bỏ qua cài đặt trên)")
         self.show_full_decimal_cb.setChecked(self.show_full_decimal)
         self.show_full_decimal_cb.toggled.connect(self.on_show_full_decimal_changed)
         decimal_layout.addWidget(self.show_full_decimal_cb)
@@ -336,8 +336,11 @@ class SimpleTimestampViewer(QMainWindow):
             # Parse as float
             unix_time = float(timestamp_str)
             
-            # Kiểm tra xem có phần thập phân không
+            # Kiểm tra xem có phần thập phân không và extract phần thập phân gốc
             has_decimal = '.' in timestamp_str
+            original_decimal = ""
+            if has_decimal:
+                original_decimal = timestamp_str.split('.')[1].rstrip('0')  # Loại bỏ trailing zeros
             
             # Nếu số lớn hơn 1e12, coi như milliseconds
             if unix_time > 1e12:
@@ -348,18 +351,20 @@ class SimpleTimestampViewer(QMainWindow):
             vn_dt = datetime.fromtimestamp(unix_time)
             
             # Format output dựa trên settings
-            if self.show_decimal and has_decimal:
+            if self.show_decimal and has_decimal and original_decimal:
                 if self.show_full_decimal:
-                    # Hiển thị đầy đủ millisecond
-                    gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                    vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                    # Hiển thị chính xác phần thập phân gốc
+                    gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S') + f".{original_decimal}"
+                    vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S') + f".{original_decimal}"
                 else:
-                    # Hiển thị theo số chữ số cấu hình
-                    microsec_str = f"{gmt_dt.microsecond:06d}"[:self.decimal_places]
-                    gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S') + f".{microsec_str}"
-                    
-                    microsec_str = f"{vn_dt.microsecond:06d}"[:self.decimal_places]
-                    vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S') + f".{microsec_str}"
+                    # Hiển thị theo số chữ số cấu hình từ phần thập phân gốc
+                    decimal_part = original_decimal[:self.decimal_places]
+                    if decimal_part:
+                        gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S') + f".{decimal_part}"
+                        vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S') + f".{decimal_part}"
+                    else:
+                        gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S')
+                        vn_str = vn_dt.strftime('%Y-%m-%d %H:%M:%S')
             else:
                 # Không hiển thị phần thập phân
                 gmt_str = gmt_dt.strftime('%Y-%m-%d %H:%M:%S')
