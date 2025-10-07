@@ -542,6 +542,7 @@ class SimpleTimestampViewer(QMainWindow):
         self.decimal_places = self.settings.value("decimal_places", 3, type=int)
         self.show_full_decimal = self.settings.value("show_full_decimal", False, type=bool)
         self.detect_mode = self.settings.value("detect_mode", False, type=bool)  # Default False
+        self.tooltip_duration = self.settings.value("tooltip_duration", 3, type=int)  # Default 3 seconds
         self.first_run = self.settings.value("first_run", True, type=bool)
     
     def save_settings(self):
@@ -550,6 +551,7 @@ class SimpleTimestampViewer(QMainWindow):
         self.settings.setValue("decimal_places", self.decimal_places)
         self.settings.setValue("show_full_decimal", self.show_full_decimal)
         self.settings.setValue("detect_mode", self.detect_mode)
+        self.settings.setValue("tooltip_duration", self.tooltip_duration)
         # Don't automatically set first_run to False here
     
     def mark_first_run_completed(self):
@@ -709,6 +711,41 @@ class SimpleTimestampViewer(QMainWindow):
         decimal_layout.addWidget(helper_note)
         
         layout.addWidget(decimal_group)
+        
+        # Tooltip duration settings group
+        tooltip_group = QGroupBox("⏱️ Cấu hình thời gian hiển thị tooltip")
+        tooltip_layout = QVBoxLayout(tooltip_group)
+        tooltip_layout.setSpacing(10)
+        tooltip_layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Tooltip duration container
+        tooltip_duration_container = QWidget()
+        tooltip_duration_layout = QHBoxLayout(tooltip_duration_container)
+        tooltip_duration_layout.setContentsMargins(0, 0, 0, 0)
+        tooltip_duration_layout.setSpacing(12)
+        
+        tooltip_duration_label = QLabel("Thời gian hiển thị (giây):")
+        tooltip_duration_label.setStyleSheet("color: #495057; font-size: 16px;")
+        tooltip_duration_layout.addWidget(tooltip_duration_label)
+        
+        self.tooltip_duration_spin = QSpinBox()
+        self.tooltip_duration_spin.setRange(1, 10)
+        self.tooltip_duration_spin.setValue(self.tooltip_duration)
+        self.tooltip_duration_spin.valueChanged.connect(self.on_tooltip_duration_changed)
+        self.tooltip_duration_spin.setFixedWidth(80)
+        self.tooltip_duration_spin.setSuffix(" giây")
+        tooltip_duration_layout.addWidget(self.tooltip_duration_spin)
+        
+        tooltip_duration_layout.addStretch()
+        
+        tooltip_layout.addWidget(tooltip_duration_container)
+        
+        # Info note
+        tooltip_info = QLabel("Tooltip sẽ tự động ẩn sau thời gian này")
+        tooltip_info.setStyleSheet("color: #6c757d; font-size: 14px; margin-left: 10px;")
+        tooltip_layout.addWidget(tooltip_info)
+        
+        layout.addWidget(tooltip_group)
         
         # Add some spacing before trigger info
         layout.addStretch()
@@ -1456,6 +1493,12 @@ THÔNG TIN:
         self.detect_mode = checked
         self.save_settings()
     
+    def on_tooltip_duration_changed(self, value):
+        """Handle tooltip duration change"""
+        self.tooltip_duration = value
+        self.save_settings()
+        logger.info(f"🕐 Tooltip duration changed to {value} seconds")
+    
     def update_decimal_ui_state(self):
         """Update decimal UI elements state"""
         if hasattr(self, 'decimal_places_spin'):
@@ -1554,9 +1597,9 @@ THÔNG TIN:
             self.tooltip_timer = QTimer()
             self.tooltip_timer.setSingleShot(True)
             self.tooltip_timer.timeout.connect(QToolTip.hideText)
-            self.tooltip_timer.start(3000)  # 3 seconds consistent
+            self.tooltip_timer.start(self.tooltip_duration * 1000)  # Convert seconds to milliseconds
             
-            logger.info(f"✅ Tooltip shown: {gmt_str} / {vn_str}")
+            logger.info(f"✅ Tooltip shown for {self.tooltip_duration}s: {gmt_str} / {vn_str}")
                 
         except Exception as e:
             logger.error(f"❌ Error showing tooltip: {e}")
