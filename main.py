@@ -786,7 +786,7 @@ def main():
     # Check for reset flag
     settings = QSettings("TimestampViewer", "Settings")
     settings.setValue("first_run", True)
-    print("🔄 Reset first_run flag!")
+    logger.info("🔄 Reset first_run flag!")
     
     # Create viewer first
     viewer = SimpleTimestampViewer()
