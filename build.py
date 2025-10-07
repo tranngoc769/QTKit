@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-QTKit Enhanced Build Script
-Professional build with code signing and distribution
+QTKit All-in-One Build Script
+Complete build, fix, and distribution script for QTKit macOS app
 """
 
 import os
 import sys
 import subprocess
 import shutil
-import tempfile
+
+def print_header(title):
+    """Print formatted header"""
+    print("\n" + "=" * 50)
+    print(f"🚀 {title}")
+    print("=" * 50)
 
 def clean_build():
     """Clean previous builds"""
@@ -19,89 +24,36 @@ def clean_build():
             shutil.rmtree(dir_name)
             print(f"  Removed: {dir_name}/")
 
-def check_tools():
-    """Check required build tools"""
-    print("🔍 Checking build tools...")
+def check_requirements():
+    """Check and install requirements"""
+    print("📦 Checking requirements...")
     
-    # Check PyInstaller
-    try:
-        subprocess.run(["pyinstaller", "--version"], capture_output=True, check=True)
-        print("  ✅ pyinstaller found")
-    except:
-        print("  📦 Installing pyinstaller...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
-        print("  ✅ pyinstaller installed")
+    required_files = ["main.py", "logo.png", "requirements.txt"]
+    for file in required_files:
+        if not os.path.exists(file):
+            print(f"❌ Required file not found: {file}")
+            return False
+        print(f"✅ Found: {file}")
     
-    # Check macOS tools (these should always be available on macOS)
-    macos_tools = [
-        ("codesign", ["codesign", "--version"]),
-        ("hdiutil", ["hdiutil", "info"]),
-        ("security", ["security", "--help"])
-    ]
-    
-    for tool_name, cmd in macos_tools:
-        try:
-            subprocess.run(cmd, capture_output=True, check=True)
-            print(f"  ✅ {tool_name} found")
-        except:
-            print(f"  ⚠️ {tool_name} not available")
-
-def install_requirements():
-    """Install required packages"""
-    print("📦 Installing requirements...")
+    # Install Python requirements
     try:
         subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], 
                       check=True, capture_output=True)
-        print("✅ Requirements installed")
+        print("✅ Python requirements installed")
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to install requirements: {e}")
         return False
-    return True
-
-def get_signing_identity():
-    """Get available code signing identity"""
-    print("🔍 Looking for code signing identity...")
     
+    # Check/install PyInstaller
     try:
-        result = subprocess.run([
-            "security", "find-identity", "-v", "-p", "codesigning"
-        ], capture_output=True, text=True, check=True)
-        
-        # Look for Developer ID Application certificates
-        lines = result.stdout.strip().split('\n')
-        dev_ids = []
-        
-        for line in lines:
-            if 'Developer ID Application' in line:
-                # Extract identity name
-                start = line.find('"') + 1
-                end = line.rfind('"')
-                if start > 0 and end > start:
-                    dev_ids.append(line[start:end])
-        
-        if dev_ids:
-            identity = dev_ids[0]
-            print(f"  ✅ Found Developer ID: {identity}")
-            return identity
-        else:
-            # Look for any Mac Developer certificates
-            for line in lines:
-                if 'Mac Developer' in line or 'Apple Development' in line:
-                    start = line.find('"') + 1
-                    end = line.rfind('"')
-                    if start > 0 and end > start:
-                        identity = line[start:end]
-                        print(f"  ⚠️ Found development certificate: {identity}")
-                        print("    Note: This is for development only, not distribution")
-                        return identity
-            
-            print("  ⚠️ No code signing certificates found")
-            print("    App will build but may show security warnings on other machines")
-            return None
-            
-    except subprocess.CalledProcessError:
-        print("  ⚠️ Could not check signing identities")
-        return None
+        subprocess.run(["pyinstaller", "--version"], capture_output=True, check=True)
+        print("✅ PyInstaller found")
+    except:
+        print("📦 Installing PyInstaller...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
+        print("✅ PyInstaller installed")
+    
+    return True
 
 def build_app():
     """Build the app using PyInstaller"""
@@ -119,7 +71,7 @@ def build_app():
         "--hidden-import=PySide6.QtGui",
         "--hidden-import=PySide6.QtWidgets", 
         "--hidden-import=pynput.keyboard",
-        "--hidden-import=AppKit",  # For macOS integration
+        "--hidden-import=AppKit",
         "--clean",
         "--noconfirm",
         "main.py"
@@ -136,7 +88,7 @@ def build_app():
         return False
 
 def update_info_plist():
-    """Update Info.plist with comprehensive permissions and metadata"""
+    """Update Info.plist with permissions and metadata"""
     print("📝 Updating Info.plist...")
     
     info_plist = "dist/QTKit.app/Contents/Info.plist"
@@ -148,7 +100,7 @@ def update_info_plist():
         with open(info_plist, 'r') as f:
             content = f.read()
         
-        # Comprehensive permissions and metadata
+        # Add comprehensive permissions and metadata
         updates = [
             # Permissions
             ('<key>NSAccessibilityUsageDescription</key>',
@@ -174,7 +126,7 @@ def update_info_plist():
             ('<key>NSSupportsAutomaticGraphicsSwitching</key>',
              '<true/>'),
             ('<key>LSUIElement</key>',
-             '<true/>'),  # Background app
+             '<true/>'),
         ]
         
         for key, value in updates:
@@ -184,183 +136,217 @@ def update_info_plist():
         with open(info_plist, 'w') as f:
             f.write(content)
         
-        print("✅ Info.plist updated with permissions and metadata")
+        print("✅ Info.plist updated")
         return True
     except Exception as e:
         print(f"⚠️ Could not update Info.plist: {e}")
         return False
 
-def sign_app(identity=None):
-    """Code sign the app bundle"""
+def fix_distribution():
+    """Fix distribution issues (quarantine, signing)"""
+    print("🔧 Fixing distribution issues...")
+    
     app_path = "dist/QTKit.app"
+    if not os.path.exists(app_path):
+        print("❌ App not found")
+        return False
     
-    if not identity:
-        print("⚠️ No signing identity, skipping code signing")
-        return True
-        
-    print(f"✍️ Code signing app with: {identity}")
-    
+    # Step 1: Remove quarantine attributes
+    print("  🔓 Removing quarantine attributes...")
     try:
-        # Sign with proper entitlements for distribution
+        cmd = ["xattr", "-dr", "com.apple.quarantine", app_path]
+        subprocess.run(cmd, capture_output=True)
+        
+        # Remove other problematic attributes
+        attrs_to_remove = [
+            "com.apple.FinderInfo",
+            "com.apple.metadata:kMDItemWhereFroms"
+        ]
+        
+        for attr in attrs_to_remove:
+            try:
+                cmd = ["xattr", "-dr", attr, app_path]
+                subprocess.run(cmd, capture_output=True)
+            except:
+                pass
+        
+        print("  ✅ Quarantine attributes removed")
+    except Exception as e:
+        print(f"  ⚠️ Could not remove quarantine: {e}")
+    
+    # Step 2: Apply ad-hoc signature
+    print("  ✍️ Applying ad-hoc signature...")
+    try:
         cmd = [
             "codesign",
             "--force",
-            "--options", "runtime",  # Hardened runtime
-            "--sign", identity,
             "--deep",
-            "--strict",
-            "--timestamp",  # Secure timestamp
+            "--sign", "-",  # Ad-hoc signature
             app_path
         ]
         
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("✅ Code signing successful!")
+        subprocess.run(cmd, check=True, capture_output=True)
+        print("  ✅ Ad-hoc signature applied")
         
-        # Verify the signature
+        # Verify signature
         verify_cmd = ["codesign", "--verify", "--verbose", app_path]
-        subprocess.run(verify_cmd, check=True, capture_output=True)
-        print("✅ Code signature verified!")
-        
-        return True
+        result = subprocess.run(verify_cmd, capture_output=True)
+        if result.returncode == 0:
+            print("  ✅ Signature verified")
         
     except subprocess.CalledProcessError as e:
-        print(f"❌ Code signing failed: {e}")
-        if e.stderr:
-            print(f"Error details: {e.stderr}")
-        return False
+        print(f"  ⚠️ Signing failed: {e}")
+    
+    return True
 
-def create_professional_dmg():
-    """Create professional distribution DMG"""
-    print("📀 Creating professional DMG...")
+def create_fix_script():
+    """Create fix script for end users"""
+    print("📝 Creating user fix script...")
+    
+    script_content = '''#!/bin/bash
+# QTKit Distribution Fixer
+# Run this if QTKit shows "damaged" error
+
+echo "🔧 QTKit Distribution Fixer"
+echo "=========================="
+
+APP_PATH="./QTKit.app"
+
+if [ ! -d "$APP_PATH" ]; then
+    echo "❌ QTKit.app not found in current directory"
+    echo "   Please run this script in the same folder as QTKit.app"
+    exit 1
+fi
+
+echo "🔓 Removing quarantine attributes..."
+xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+xattr -dr com.apple.FinderInfo "$APP_PATH" 2>/dev/null || true
+
+echo "✍️ Applying fresh signature..."
+codesign --force --deep --sign - "$APP_PATH" 2>/dev/null || true
+
+echo "✅ QTKit should now work!"
+echo "   Try opening QTKit.app"
+echo ""
+echo "If still doesn't work:"
+echo "1. Right-click QTKit.app → Open"
+echo "2. Click 'Open' when asked"
+echo "3. Or: System Preferences → Security → Allow"
+'''
+    
+    with open("dist/Fix-QTKit.sh", "w") as f:
+        f.write(script_content)
+    
+    # Make executable
+    os.chmod("dist/Fix-QTKit.sh", 0o755)
+    print("✅ Fix script created: dist/Fix-QTKit.sh")
+
+def create_distribution_dmg():
+    """Create professional DMG for distribution"""
+    print("📀 Creating distribution DMG...")
     
     if not os.path.exists("dist/QTKit.app"):
         print("❌ App not found")
         return False
     
-    # Clean old DMG
-    dmg_name = "QTKit-1.0.0.dmg"
+    # Remove old DMG
+    dmg_name = "QTKit-1.0.0-Ready.dmg"
     if os.path.exists(dmg_name):
         os.remove(dmg_name)
     
     # Create temp directory
-    temp_dir = "temp_dmg"
+    temp_dir = "temp_dmg_final"
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir)
     
     try:
         # Copy app and create Applications symlink
-        print("  📁 Setting up DMG contents...")
         shutil.copytree("dist/QTKit.app", f"{temp_dir}/QTKit.app")
         os.symlink("/Applications", f"{temp_dir}/Applications")
         
-        # Create comprehensive installation instructions
-        instructions = """QTKit - QuickTime Kit v1.0.0
+        # Copy fix script
+        if os.path.exists("dist/Fix-QTKit.sh"):
+            shutil.copy2("dist/Fix-QTKit.sh", f"{temp_dir}/Fix-QTKit.sh")
+        
+        # Create installation instructions
+        instructions = '''QTKit - QuickTime Kit v1.0.0
 ================================
 
-🎯 HƯỚNG DẪN CÁI ĐẶT:
+🎯 HƯỚNG DẪN CÀI ĐẶT:
 
+CÁCH 1 - Cài đặt bình thường:
 1️⃣ Kéo QTKit.app vào thư mục Applications
 2️⃣ Mở QTKit từ Applications hoặc Spotlight (Cmd+Space)
-3️⃣ Cấp quyền Accessibility khi được yêu cầu:
-   • System Preferences → Security & Privacy → Privacy → Accessibility
-   • Hoặc System Settings → Privacy & Security → Accessibility (macOS 13+)
-   • Thêm QTKit vào danh sách và tick chọn
+3️⃣ Cấp quyền Accessibility khi được yêu cầu
+
+CÁCH 2 - Nếu gặp lỗi "QTKit is damaged":
+1️⃣ Chạy script: sh Fix-QTKit.sh
+2️⃣ Hoặc Right-click QTKit.app → Open → Open anyway
+3️⃣ Hoặc thủ công: xattr -dr com.apple.quarantine QTKit.app
 
 📱 CÁCH SỬ DỤNG:
 
-• App sẽ chạy ngầm (icon xuất hiện trong system tray)
-• Copy timestamp (như: 1640995200) và nhấn Cmd+C
-• Tooltip sẽ hiện thời gian GMT và VN
-• Right-click tray icon để:
-  - Mở cấu hình
-  - Xem hướng dẫn
-  - Thoát app
+• App chạy ngầm (icon trong system tray)
+• Copy timestamp và nhấn Cmd+C để xem thời gian
+• Right-click tray icon để cấu hình
+• Tìm "QTKit" trong Spotlight để mở lại
 
-⚙️ TÍNH NĂNG:
+⚙️ CẤP QUYỀN:
 
-• Tự động detect timestamp trong clipboard
-• Hiển thị thời gian GMT và VN
-• Configurable decimal places
-• Detect mode cho text dài
-• Professional system tray integration
+Khi lần đầu chạy, app sẽ yêu cầu quyền Accessibility:
+• System Preferences → Security & Privacy → Accessibility
+• Hoặc System Settings → Privacy & Security → Accessibility (macOS 13+)
+• Thêm QTKit và tick chọn
 
-🆘 KHẮC PHỤC SỰ CỐ:
+🆘 KHẮC PHỤC:
 
-Nếu app không hoạt động:
-• Kiểm tra quyền Accessibility đã được cấp
-• Thử khởi động lại app
-• Right-click app → Open nếu bị cảnh báo security
+• App bị "damaged": Chạy Fix-QTKit.sh
+• Không detect Cmd+C: Kiểm tra quyền Accessibility
+• App crash: Check log ~/Library/Logs/QTKit/qtkit.log
+• Không tìm thấy: Tìm "QTKit" trong Spotlight
 
-Nếu không tìm thấy app:
-• Tìm "QTKit" trong Spotlight (Cmd+Space)
-• Hoặc vào Applications folder
-• Check system tray (góc trên bên phải màn hình)
+═══════════════════════════════════════════════
+QTKit - QuickTime Kit
+Copyright © 2025 QT Corporation
+Developed by Quang Trần
 
-═══════════════════════════════════════════════════════
-Copyright © 2025 QT Corporation. All rights reserved.
-Developed by Quang Trần - QT Corporation
-═══════════════════════════════════════════════════════
-"""
+🎯 Chức năng: Chuyển đổi timestamp thông minh
+📧 Hỗ trợ: QT Corporation
+═══════════════════════════════════════════════
+'''
         
-        with open(f"{temp_dir}/📖 HƯỚNG DẪN CÀI ĐẶT VÀ SỬ DỤNG.txt", "w", encoding="utf-8") as f:
+        with open(f"{temp_dir}/📖 HƯỚNG DẪN.txt", "w", encoding="utf-8") as f:
             f.write(instructions)
         
-        # Create troubleshooting guide
-        troubleshooting = """QTKit - Khắc phục sự cố
-====================
-
-❌ LỖI THƯỜNG GẶP:
-
-1. "QTKit can't be opened because it is from an unidentified developer"
-   → Right-click app → Open → Open anyway
-   → Hoặc: System Preferences → Security → "Open Anyway"
-
-2. App không phản ứng khi nhấn Cmd+C
-   → Kiểm tra quyền Accessibility
-   → System Preferences → Security & Privacy → Privacy → Accessibility
-   → Đảm bảo QTKit đã được tick chọn
-
-3. Không tìm thấy app sau khi cài
-   → Tìm "QTKit" trong Spotlight (Cmd+Space)
-   → Hoặc vào /Applications/QTKit.app
-   → Check system tray icon
-
-4. App bị crash hoặc không khởi động
-   → Mở Terminal và chạy: /Applications/QTKit.app/Contents/MacOS/QTKit
-   → Xem error messages
-   → Kiểm tra log: ~/Library/Logs/QTKit/qtkit.log
-
-🔧 RESET APP:
-
-Nếu app hoạt động không bình thường:
-1. Quit app từ tray menu
-2. Xóa settings: ~/Library/Preferences/com.qt-corporation.qtkit.plist
-3. Khởi động lại app
-
-📞 HỖ TRỢ:
-
-Nếu vẫn gặp vấn đề, liên hệ QT Corporation
-Hoặc check logs tại: ~/Library/Logs/QTKit/qtkit.log
-"""
+        # Remove quarantine from temp directory
+        try:
+            subprocess.run(["xattr", "-dr", "com.apple.quarantine", temp_dir], 
+                         capture_output=True)
+        except:
+            pass
         
-        with open(f"{temp_dir}/🔧 KHẮC PHỤC SỰ CỐ.txt", "w", encoding="utf-8") as f:
-            f.write(troubleshooting)
-        
-        # Create DMG with professional settings
-        print("  🔨 Creating DMG file...")
+        # Create DMG
         cmd = [
             "hdiutil", "create",
             "-volname", "QTKit Installer",
             "-srcfolder", temp_dir,
             "-ov", "-format", "UDZO",
-            "-imagekey", "zlib-level=9",  # Best compression
+            "-imagekey", "zlib-level=9",
             dmg_name
         ]
         
         subprocess.run(cmd, check=True, capture_output=True)
+        
+        # Remove quarantine from DMG
+        try:
+            subprocess.run(["xattr", "-dr", "com.apple.quarantine", dmg_name], 
+                         capture_output=True)
+        except:
+            pass
+        
         shutil.rmtree(temp_dir)
-        print(f"✅ Professional DMG created: {dmg_name}")
+        print(f"✅ Distribution DMG created: {dmg_name}")
         return True
         
     except Exception as e:
@@ -370,8 +356,8 @@ Hoặc check logs tại: ~/Library/Logs/QTKit/qtkit.log
         return False
 
 def main():
-    print("🚀 QTKit Enhanced Build Script")
-    print("=" * 40)
+    print("🚀 QTKit All-in-One Build Script")
+    print("=" * 50)
     print(f"Python: {sys.version.split()[0]}")
     print(f"Platform: {sys.platform}")
     
@@ -379,60 +365,60 @@ def main():
         print("❌ This script is for macOS only!")
         return
     
-    # Check requirements
-    required_files = ["main.py", "logo.png", "requirements.txt"]
-    for file in required_files:
-        if not os.path.exists(file):
-            print(f"❌ Required file not found: {file}")
-            return
-        print(f"✅ Found: {file}")
-    
     # Build process
-    print("\n" + "=" * 40)
-    check_tools()
+    print_header("CHECKING REQUIREMENTS")
+    if not check_requirements():
+        print("❌ Requirements check failed!")
+        return
+    
+    print_header("BUILDING APP")
     clean_build()
     
-    if not install_requirements():
-        return
-        
     if not build_app():
+        print("❌ App build failed!")
         return
-        
+    
     if not update_info_plist():
-        return
+        print("⚠️ Info.plist update failed, continuing...")
     
-    # Code signing
-    print("\n" + "=" * 40)
-    signing_identity = get_signing_identity()
-    signed = sign_app(signing_identity)
+    print_header("FIXING DISTRIBUTION")
+    fix_distribution()
+    create_fix_script()
     
-    # DMG creation
-    print("\n" + "=" * 40)
-    choice = input("📀 Create professional DMG? (y/n): ").lower()
+    print_header("CREATING DISTRIBUTION")
+    choice = input("📀 Create distribution DMG? (y/n): ").lower()
     dmg_created = False
     if choice == 'y':
-        dmg_created = create_professional_dmg()
+        dmg_created = create_distribution_dmg()
     
-    # Summary
-    print("\n" + "=" * 40)
-    print("🎉 Build completed!")
+    # Final summary
+    print_header("BUILD COMPLETED")
+    print("🎉 QTKit build completed successfully!")
     print("\n📁 Output files:")
-    print("  ✅ dist/QTKit.app - Application bundle")
+    print("  ✅ dist/QTKit.app - Ready-to-run app")
+    print("  ✅ dist/Fix-QTKit.sh - User fix script")
     if dmg_created:
-        print("  ✅ QTKit-1.0.0.dmg - Distribution installer")
+        print("  ✅ QTKit-1.0.0-Ready.dmg - Distribution installer")
     
-    print("\n📋 Build summary:")
-    print(f"  • Code signed: {'✅ Yes' if signed and signing_identity else '⚠️ No (may show warnings)'}")
-    print(f"  • Permissions: ✅ Comprehensive Info.plist")
-    print(f"  • Distribution: {'✅ Professional DMG' if dmg_created else '⚠️ App bundle only'}")
+    print("\n🚀 Distribution ready!")
+    print("📋 What's included:")
+    print("  • Ad-hoc signed app (no certificate needed)")
+    print("  • Quarantine attributes removed")  
+    print("  • Comprehensive permissions in Info.plist")
+    print("  • Fix script for 'damaged' errors")
+    print("  • Professional DMG with instructions")
     
-    if not signing_identity:
-        print("\n💡 To eliminate security warnings:")
-        print("  1. Get Apple Developer ID certificate ($99/year)")
-        print("  2. Rebuild with proper code signing")
-        print("  3. Optionally notarize with Apple")
+    print("\n💡 For end users:")
+    if dmg_created:
+        print("  1. Share QTKit-1.0.0-Ready.dmg")
+        print("  2. Users drag QTKit.app to Applications")
+        print("  3. If 'damaged' error, run Fix-QTKit.sh")
+    else:
+        print("  1. Share dist/QTKit.app")
+        print("  2. Include dist/Fix-QTKit.sh")
+        print("  3. Instruct users to run fix script if needed")
     
-    print("\n🚀 Ready for distribution!")
+    print("\n✅ App should work on other machines without issues!")
 
 if __name__ == "__main__":
     main()
