@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
                               QCheckBox, QSpinBox, QGroupBox, QPushButton, QMessageBox,
                               QTextEdit, QScrollArea, QSplitter, QFrame, QTabWidget,
                               QListWidget, QListWidgetItem, QDialog)
-from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint, QDateTime
-from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor, QColor, QPalette
+from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint, QDateTime, QUrl
+from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor, QColor, QPalette, QDesktopServices
 from pynput import keyboard
 
 # In-memory log storage for UI
@@ -835,6 +835,11 @@ class SimpleTimestampViewer(QMainWindow):
         corp_copyright.setStyleSheet("color: #90a4ae; font-size: 11px;")
         text_layout.addWidget(corp_copyright)
         
+        corp_contact = QLabel('📞 Contact: <a href="https://t.me/qpepsi769" style="color: #1976d2; text-decoration: underline;">@qpepsi769</a>')
+        corp_contact.setStyleSheet("color: #1976d2; font-size: 12px; font-weight: bold;")
+        corp_contact.setOpenExternalLinks(True)
+        text_layout.addWidget(corp_contact)
+        
         qt_corp_main_layout.addLayout(text_layout)
         qt_corp_main_layout.addStretch()  # Push content to left
         
@@ -946,34 +951,214 @@ class SimpleTimestampViewer(QMainWindow):
     
     def show_help(self):
         """Show help dialog"""
-        msg = QMessageBox()
-        msg.setWindowTitle("QTKit - Hướng dẫn sử dụng")
-        msg.setIcon(QMessageBox.Information)
+        # Create custom dialog with larger size
+        dialog = QDialog()
+        dialog.setWindowTitle("QTKit - Hướng dẫn sử dụng")
+        dialog.setGeometry(200, 200, 700, 600)
+        dialog.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
         
-        help_text = """🎯 Cách sử dụng QTKit:
-
-1️⃣ Sao chép timestamp:
-   • Nhấn Cmd+C trên timestamp (vd: 1640995200)
-   • QTKit sẽ tự động hiện tooltip với thời gian
-
-2️⃣ Cấu hình:
-   • Right-click vào icon tray → "Mở cấu hình"
-   • Tùy chỉnh hiển thị thập phân
-   • Bật/tắt chế độ detect trong text dài
-
-3️⃣ Cài đặt lần đầu:
-   • Ứng dụng sẽ yêu cầu quyền Accessibility
-   • System Preferences → Security & Privacy → Accessibility
-   • Thêm QTKit vào danh sách
-
-4️⃣ Tìm lại ứng dụng:
-   • Tìm "QTKit" trong Spotlight (Cmd+Space)
-   • Hoặc mở từ Applications folder
-   • Icon sẽ xuất hiện trong system tray"""
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(5)
+        layout.setContentsMargins(15, 15, 15, 15)
         
-        msg.setText("QTKit - QuickTime Kit")
-        msg.setInformativeText("Công cụ chuyển đổi timestamp thông minh")
-        msg.setDetailedText(help_text)
+        # Header with logo and title
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setSpacing(15)
+        
+        # Logo
+        logo_label = QLabel()
+        try:
+            import os
+            possible_paths = [
+                "logo.png",
+                os.path.join(os.path.dirname(__file__), "logo.png"),
+                os.path.join(sys._MEIPASS, "logo.png") if hasattr(sys, '_MEIPASS') else None
+            ]
+            
+            for logo_path in possible_paths:
+                if logo_path and os.path.exists(logo_path):
+                    logo_pixmap = QPixmap(logo_path)
+                    if not logo_pixmap.isNull():
+                        scaled_logo = logo_pixmap.scaled(80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        logo_label.setPixmap(scaled_logo)
+                        break
+        except:
+            logo_label.setText("📱")
+            logo_label.setStyleSheet("font-size: 60px;")
+        
+        header_layout.addWidget(logo_label)
+        
+        # Title section
+        title_layout = QVBoxLayout()
+        title = QLabel("QTKit - QuickTime Kit")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #2c3e50;")
+        title_layout.addWidget(title)
+        
+        subtitle = QLabel("Công cụ chuyển đổi timestamp thông minh")
+        subtitle.setStyleSheet("font-size: 16px; color: #7f8c8d; margin-top: 5px;")
+        title_layout.addWidget(subtitle)
+        
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        
+        layout.addWidget(header_container)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("color: #bdc3c7;")
+        layout.addWidget(separator)
+        
+        # Help content in scrollable area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #f8f9fa;
+            }
+        """)
+        
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(5)
+        content_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Help sections
+        sections = [
+            {
+                "icon": "🎯",
+                "title": "Cách sử dụng cơ bản",
+                "content": """• Nhấn Cmd+C trên timestamp (ví dụ: 1640995200)
+• QTKit sẽ tự động hiện tooltip với thời gian GMT và VN
+• Tooltip hiển thị trong thời gian có thể tùy chỉnh (mặc định 3 giây)"""
+            },
+            {
+                "icon": "⚙️",
+                "title": "Cấu hình ứng dụng",
+                "content": """• Right-click vào icon tray → "Mở cấu hình"
+• Tùy chỉnh hiển thị phần thập phân (0-6 chữ số)
+• Bật/tắt chế độ detect timestamp trong text dài
+• Cài đặt thời gian hiển thị tooltip (1-10 giây)"""
+            },
+            {
+                "icon": "🔐",
+                "title": "Cài đặt quyền hệ thống",
+                "content": """• Lần đầu chạy: ứng dụng yêu cầu quyền Accessibility
+• macOS 13+: System Settings → Privacy & Security → Accessibility
+• macOS 12-: System Preferences → Security & Privacy → Accessibility
+• Tick chọn QTKit trong danh sách ứng dụng"""
+            },
+            {
+                "icon": "🔍",
+                "title": "Debug và troubleshoot",
+                "content": """• Right-click icon tray → "Xem logs" để kiểm tra hoạt động
+• Right-click icon tray → "Kiểm tra quyền" để xem trạng thái permissions
+• Nếu không hoạt động: kiểm tra lại quyền Accessibility và Input Monitoring"""
+            },
+            {
+                "icon": "📱",
+                "title": "Tìm lại ứng dụng",
+                "content": """• Tìm "QTKit" trong Spotlight (Cmd+Space)
+• Mở từ Applications folder
+• Icon xuất hiện trong system tray (góc trên bên phải màn hình)
+• App chạy ngầm, không hiện trong Dock"""
+            },
+            {
+                "icon": "💬",
+                "title": "Liên hệ & Hỗ trợ",
+                "content": """• Telegram: @qpepsi769 (click nút bên dưới)
+• Báo lỗi, góp ý cải thiện
+• Yêu cầu tính năng mới
+• Hỗ trợ kỹ thuật"""
+            },
+            {
+                "icon": "📞",
+                "title": "Liên hệ hỗ trợ",
+                "content": """• Telegram: https://t.me/qpepsi769
+• Báo lỗi, góp ý cải tiến
+• Yêu cầu tính năng mới
+• Hỗ trợ kỹ thuật 24/7"""
+            }
+        ]
+        
+        for section in sections:
+            section_container = QWidget()
+            section_container.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                    border-radius: 8px;
+                    padding: 8px;
+                }
+            """)
+            
+            section_layout = QVBoxLayout(section_container)
+            section_layout.setSpacing(3)
+            
+            # Section header
+            header = QLabel(f"{section['icon']} {section['title']}")
+            header.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
+            section_layout.addWidget(header)
+            
+            # Section content
+            content = QLabel(section['content'])
+            content.setStyleSheet("font-size: 15px; color: #34495e; line-height: 1.2;")
+            content.setWordWrap(True)
+            section_layout.addWidget(content)
+            
+            content_layout.addWidget(section_container)
+        
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area)
+        
+        # Close button
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        # Contact button
+        contact_btn = QPushButton("📱 Liên hệ Telegram")
+        contact_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://t.me/qpepsi769")))
+        contact_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #0088cc, stop:1 #006699);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 12px 20px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #006699, stop:1 #004466);
+            }
+        """)
+        button_layout.addWidget(contact_btn)
+        
+        close_btn = QPushButton("Đóng")
+        close_btn.clicked.connect(dialog.close)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #3498db, stop:1 #2980b9);
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 12px 30px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #2980b9, stop:1 #21618c);
+            }
+        """)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
         
         # Show temporarily with dock icon
         if sys.platform == "darwin":
@@ -983,7 +1168,7 @@ class SimpleTimestampViewer(QMainWindow):
             except ImportError:
                 pass
         
-        msg.exec_()
+        dialog.exec_()
         
         # Hide dock icon again
         if sys.platform == "darwin":
@@ -1444,7 +1629,8 @@ THÔNG TIN:
 • Ngày hết hạn: {datetime.fromtimestamp(VERSION_EXPIRY_TIMESTAMP).strftime('%d/%m/%Y %H:%M:%S')}
 
 Để tiếp tục sử dụng QTKit, vui lòng:
-🔄 Liên hệ @qpepsi769 để update bản nâng cấp
+� Liên hệ Telegram: https://t.me/qpepsi769
+🔄 Để update bản nâng cấp mới nhất
 
 Ứng dụng sẽ thoát sau khi đóng thông báo này."""
 
