@@ -85,7 +85,7 @@ class SimpleTimestampViewer(QMainWindow):
         self.show_decimal = self.settings.value("show_decimal", True, type=bool)
         self.decimal_places = self.settings.value("decimal_places", 3, type=int)
         self.show_full_decimal = self.settings.value("show_full_decimal", False, type=bool)
-        self.detect_mode = self.settings.value("detect_mode", False, type=bool)
+        self.detect_mode = self.settings.value("detect_mode", False, type=bool)  # Default False
         self.first_run = self.settings.value("first_run", True, type=bool)
     
     def save_settings(self):
@@ -94,97 +94,236 @@ class SimpleTimestampViewer(QMainWindow):
         self.settings.setValue("decimal_places", self.decimal_places)
         self.settings.setValue("show_full_decimal", self.show_full_decimal)
         self.settings.setValue("detect_mode", self.detect_mode)
+        # Don't automatically set first_run to False here
+    
+    def mark_first_run_completed(self):
+        """Mark first run as completed"""
+        self.first_run = False
         self.settings.setValue("first_run", False)
+    
+    def reset_first_run(self):
+        """Reset first run for testing - can be called from terminal"""
+        self.settings.setValue("first_run", True)
+        print("🔄 First run reset! Restart app to see welcome screen.")
         
     def setup_ui(self):
         """Setup configuration UI"""
         self.setWindowTitle("Timestamp Viewer - Cấu hình")
-        self.setGeometry(100, 100, 450, 400)
+        self.setGeometry(100, 100, 480, 520)
+        
+        # Set window style
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f8f9fa;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+                margin: 8px 0px;
+                padding-top: 15px;
+                background-color: white;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+                color: #495057;
+            }
+            QCheckBox {
+                padding: 6px;
+                font-size: 16px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QPushButton {
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-weight: bold;
+                font-size: 16px;
+            }
+            QSpinBox {
+                padding: 4px 8px;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                background-color: white;
+            }
+        """)
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
         if hasattr(self, 'first_run') and self.first_run:
             title = QLabel("🎉 Chào mừng đến với Timestamp Viewer!")
-            welcome_info = QLabel("Ứng dụng sẽ tự động hiển thị thời gian khi bạn copy timestamp.\nHãy cấu hình các tùy chọn dưới đây:")
-            welcome_info.setStyleSheet("color: #27ae60; text-align: center; margin: 10px;")
-            welcome_info.setAlignment(Qt.AlignCenter)
-            layout.addWidget(welcome_info)
+            title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 15px;")
         else:
             title = QLabel("🕐 Timestamp Viewer - Cấu hình")
+            title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 15px;")
         
-        title.setStyleSheet("font-size: 18px; font-weight: bold; text-align: center; margin: 20px;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
+        
+        # Detection mode group (moved to top)
+        detect_group = QGroupBox("🔍 Chế độ detect timestamp")
+        detect_layout = QVBoxLayout(detect_group)
+        detect_layout.setSpacing(10)
+        detect_layout.setContentsMargins(15, 15, 15, 15)
+        
+        self.detect_mode_cb = QCheckBox("✓ Detect timestamp trong clipboard")
+        self.detect_mode_cb.setChecked(False)  # Not checked by default
+        self.detect_mode_cb.toggled.connect(self.on_detect_mode_changed)
+        self.detect_mode_cb.setStyleSheet("color: #495057;")
+        detect_layout.addWidget(self.detect_mode_cb)
+        
+        # Info container with better styling
+        detect_info_container = QWidget()
+        detect_info_container.setStyleSheet("background-color: #e9ecef; border-radius: 6px; padding: 8px;")
+        info_layout = QVBoxLayout(detect_info_container)
+        info_layout.setContentsMargins(10, 8, 10, 8)
+        
+        info_on = QLabel("• Bật: Tự động tìm timestamp trong text dài")
+        info_on.setStyleSheet("color: #495057; font-size: 16px; margin: 2px 0;")
+        info_layout.addWidget(info_on)
+        
+        info_off = QLabel("• Tắt: Chỉ detect khi toàn bộ clipboard là timestamp")
+        info_off.setStyleSheet("color: #495057; font-size: 16px; margin: 2px 0;")
+        info_layout.addWidget(info_off)
+        
+        detect_layout.addWidget(detect_info_container)
+        layout.addWidget(detect_group)
         
         # Decimal settings group
         decimal_group = QGroupBox("⚙️ Cấu hình hiển thị thập phân")
         decimal_layout = QVBoxLayout(decimal_group)
+        decimal_layout.setSpacing(10)
+        decimal_layout.setContentsMargins(15, 15, 15, 15)
         
-        # Show decimal checkbox
-        self.show_decimal_cb = QCheckBox("Hiển thị phần thập phân")
+        # Main decimal options container
+        decimal_main_container = QWidget()
+        decimal_main_layout = QHBoxLayout(decimal_main_container)
+        decimal_main_layout.setContentsMargins(0, 0, 0, 0)
+        decimal_main_layout.setSpacing(20)
+        
+        # Left side - Show decimal checkbox
+        self.show_decimal_cb = QCheckBox("✓ Hiển thị phần thập phân")
         self.show_decimal_cb.setChecked(self.show_decimal)
         self.show_decimal_cb.toggled.connect(self.on_show_decimal_changed)
-        decimal_layout.addWidget(self.show_decimal_cb)
+        self.show_decimal_cb.setStyleSheet("color: #495057;")
+        decimal_main_layout.addWidget(self.show_decimal_cb)
         
-        # Decimal places
-        decimal_places_layout = QHBoxLayout()
-        decimal_places_layout.addWidget(QLabel("Số chữ số thập phân:"))
+        # Right side - Decimal places (aligned with checkbox)
+        decimal_places_container = QWidget()
+        decimal_places_layout = QHBoxLayout(decimal_places_container)
+        decimal_places_layout.setContentsMargins(0, 0, 0, 0)
+        decimal_places_layout.setSpacing(8)
+        
+        decimal_label = QLabel("Số chữ số:")
+        decimal_label.setStyleSheet("color: #6c757d; font-size: 16px;")
+        decimal_places_layout.addWidget(decimal_label)
+        
         self.decimal_places_spin = QSpinBox()
         self.decimal_places_spin.setRange(0, 6)
         self.decimal_places_spin.setValue(self.decimal_places)
         self.decimal_places_spin.valueChanged.connect(self.on_decimal_places_changed)
+        self.decimal_places_spin.setFixedWidth(60)
         decimal_places_layout.addWidget(self.decimal_places_spin)
         decimal_places_layout.addStretch()
-        decimal_layout.addLayout(decimal_places_layout)
+        
+        decimal_main_layout.addWidget(decimal_places_container)
+        decimal_main_layout.addStretch()
+        
+        decimal_layout.addWidget(decimal_main_container)
         
         # Full decimal checkbox
-        self.show_full_decimal_cb = QCheckBox("Hiển thị toàn bộ phần thập phân gốc (không padding - bỏ qua cài đặt trên)")
+        self.show_full_decimal_cb = QCheckBox("✓ Hiển thị toàn bộ phần thập phân gốc")
         self.show_full_decimal_cb.setChecked(self.show_full_decimal)
         self.show_full_decimal_cb.toggled.connect(self.on_show_full_decimal_changed)
+        self.show_full_decimal_cb.setStyleSheet("color: #495057;")
         decimal_layout.addWidget(self.show_full_decimal_cb)
+        
+        # Add helper note
+        helper_note = QLabel("(Bỏ qua cài đặt số chữ số bên trên)")
+        helper_note.setStyleSheet("color: #6c757d; font-size: 14px; margin-left: 25px; margin-top: -5px;")
+        decimal_layout.addWidget(helper_note)
         
         layout.addWidget(decimal_group)
         
-        # Detection mode group
-        detect_group = QGroupBox("🔍 Chế độ detect timestamp")
-        detect_layout = QVBoxLayout(detect_group)
+        # Add some spacing before trigger info
+        layout.addStretch()
         
-        self.detect_mode_cb = QCheckBox("Detect timestamp trong clipboard (tự động tìm số giống timestamp)")
-        self.detect_mode_cb.setChecked(self.detect_mode)
-        self.detect_mode_cb.toggled.connect(self.on_detect_mode_changed)
-        detect_layout.addWidget(self.detect_mode_cb)
+        # Trigger and warning info (common for all modes)
+        trigger_container = QWidget()
+        trigger_container.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 #fff3cd, stop:1 #ffeaa7);
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 12px;
+        """)
+        trigger_layout = QVBoxLayout(trigger_container)
+        trigger_layout.setContentsMargins(15, 12, 15, 12)
+        trigger_layout.setSpacing(8)
         
-        detect_info = QLabel("• Bật: Tự động tìm timestamp trong text dài\n• Tắt: Chỉ detect khi toàn bộ clipboard là timestamp")
-        detect_info.setStyleSheet("color: #666; font-size: 12px; margin-left: 20px;")
-        detect_layout.addWidget(detect_info)
+        info_trigger = QLabel("⌨️ Trigger: Phím Command + C (lấy clipboard)")
+        info_trigger.setStyleSheet("color: #856404; font-size: 16px; font-weight: bold;")
+        trigger_layout.addWidget(info_trigger)
         
-        layout.addWidget(detect_group)
+        info_warning = QLabel("⚠️ Lưu ý: Bấm Cmd+C ở bất kỳ đâu sẽ trigger kiểm tra")
+        info_warning.setStyleSheet("color: #856404; font-size: 14px;")
+        trigger_layout.addWidget(info_warning)
         
-        # Status
-        status_label = QLabel("🎯 Cmd+C timestamp → Tooltip hiện ngay!\n⚡ App đang chạy ngầm...")
-        status_label.setStyleSheet("color: #27ae60; text-align: center; margin: 15px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;")
-        status_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(status_label)
+        layout.addWidget(trigger_container)
         
-        # Buttons
+        # Add some spacing before buttons
+        layout.addStretch()
+        
+        # Buttons with better styling
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(12)
         
         if hasattr(self, 'first_run') and self.first_run:
-            start_btn = QPushButton("🚀 Bắt đầu sử dụng")
+            start_btn = QPushButton("🚀 Bắt đầu & chạy ngầm")
             start_btn.clicked.connect(self.start_using)
-            start_btn.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 8px;")
+            start_btn.setStyleSheet("""
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #28a745, stop:1 #20a83a);
+                color: white;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 14px;
+            """)
+            start_btn.setMinimumHeight(45)
             button_layout.addWidget(start_btn)
         else:
             hide_btn = QPushButton("Ẩn cửa sổ")
             hide_btn.clicked.connect(self.hide)
+            hide_btn.setStyleSheet("""
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                    stop:0 #6c757d, stop:1 #5a6268);
+                color: white;
+                border-radius: 8px;
+                padding: 12px 24px;
+            """)
+            hide_btn.setMinimumHeight(45)
             button_layout.addWidget(hide_btn)
         
         quit_btn = QPushButton("Thoát ứng dụng")
         quit_btn.clicked.connect(self.quit_app)
-        quit_btn.setStyleSheet("background-color: #e74c3c; color: white;")
+        quit_btn.setStyleSheet("""
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                stop:0 #dc3545, stop:1 #c82333);
+            color: white;
+            border-radius: 8px;
+            padding: 12px 24px;
+        """)
+        quit_btn.setMinimumHeight(45)
         button_layout.addWidget(quit_btn)
         
         layout.addLayout(button_layout)
@@ -218,6 +357,9 @@ class SimpleTimestampViewer(QMainWindow):
     
     def start_using(self):
         """Start using the app (for first run)"""
+        # Mark first run as completed
+        self.mark_first_run_completed()
+        
         # Hide dock icon on macOS after first setup
         if sys.platform == "darwin":
             try:
@@ -488,10 +630,9 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     
     # Check for reset flag
-    if "--reset-first-run" in sys.argv:
-        settings = QSettings("TimestampViewer", "Settings")
-        settings.setValue("first_run", True)
-        print("🔄 Reset first_run flag!")
+    settings = QSettings("TimestampViewer", "Settings")
+    settings.setValue("first_run", True)
+    print("🔄 Reset first_run flag!")
     
     # Create viewer first
     viewer = SimpleTimestampViewer()
