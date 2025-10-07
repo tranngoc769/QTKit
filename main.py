@@ -2,6 +2,8 @@
 import sys
 import re
 import time
+import logging
+import os
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                               QWidget, QLabel, QSystemTrayIcon, QMenu, QToolTip, 
@@ -9,6 +11,37 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayo
 from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint
 from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor
 from pynput import keyboard
+
+# Setup logging
+def setup_logging():
+    """Setup logging to file and console"""
+    # Create logs directory if not exists
+    log_dir = os.path.expanduser("~/Library/Logs/QTKit")
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Log file path
+    log_file = os.path.join(log_dir, "qtkit.log")
+    
+    # Setup logging configuration
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 50)
+    logger.info("🚀 QTKit starting up...")
+    logger.info(f"📁 Log file: {log_file}")
+    logger.info("=" * 50)
+    
+    return logger
+
+# Initialize logger
+logger = setup_logging()
 
 class CmdCMonitor(QThread):
     """Monitor Cmd+C key combination"""
@@ -23,17 +56,23 @@ class CmdCMonitor(QThread):
     def run(self):
         """Start keyboard listener"""
         try:
+            logger.info("🔧 Starting keyboard listener...")
             self.listener = keyboard.Listener(
                 on_press=self.on_key_press,
                 on_release=self.on_key_release
             )
             self.listener.start()
+            logger.info("🎧 Keyboard listener started")
             
             while self.running:
                 self.msleep(100)
                 
         except Exception as e:
-            print(f"Keyboard listener error: {e}")
+            logger.error(f"❌ Keyboard listener error: {e}")
+            logger.warning("💡 This usually means accessibility permissions are needed")
+            # Try to continue anyway
+            while self.running:
+                self.msleep(1000)
     
     def on_key_press(self, key):
         """Handle key press"""
@@ -43,7 +82,7 @@ class CmdCMonitor(QThread):
             elif (self.cmd_pressed and 
                   hasattr(key, 'char') and 
                   key.char and key.char.lower() == 'c'):
-                print("🎯 Cmd+C detected!")
+                logger.info("🎯 Cmd+C detected!")
                 self.cmd_c_pressed.emit()
         except AttributeError:
             pass
@@ -73,12 +112,12 @@ class SimpleTimestampViewer(QMainWindow):
         self.setup_cmd_c_monitoring()
         
         # Show config window on first run
-        print(f"🔍 First run status: {self.first_run}")
+        logger.info(f"🔍 First run status: {self.first_run}")
         if self.first_run:
-            print("🎯 Showing first run welcome...")
+            logger.info("🎯 Showing first run welcome...")
             self.show_first_run_welcome()
         else:
-            print("👻 Not first run - running in background")
+            logger.info("👻 Not first run - running in background")
     
     def load_settings(self):
         """Load settings from QSettings"""
@@ -104,7 +143,7 @@ class SimpleTimestampViewer(QMainWindow):
     def reset_first_run(self):
         """Reset first run for testing - can be called from terminal"""
         self.settings.setValue("first_run", True)
-        print("🔄 First run reset! Restart app to see welcome screen.")
+        logger.info("🔄 First run reset! Restart app to see welcome screen.")
         
     def setup_ui(self):
         """Setup configuration UI"""
@@ -287,19 +326,37 @@ class SimpleTimestampViewer(QMainWindow):
         qt_corp_main_layout.setContentsMargins(12, 8, 12, 8)
         qt_corp_main_layout.setSpacing(12)
         
-        # Logo on the left - bigger size
+        # Logo on the left - bigger size with proper path handling
         logo_label = QLabel()
         try:
-            logo_pixmap = QPixmap("ok.png")
-            if not logo_pixmap.isNull():
-                # Scale logo to bigger size (64x64)
-                scaled_logo = logo_pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                logo_label.setPixmap(scaled_logo)
-            else:
+            import os
+            # Try multiple possible paths for logo
+            possible_paths = [
+                "logo.png",
+                os.path.join(os.path.dirname(__file__), "logo.png"),
+                os.path.join(os.path.dirname(sys.executable), "logo.png"),
+                os.path.join(sys._MEIPASS, "logo.png") if hasattr(sys, '_MEIPASS') else None
+            ]
+            
+            logo_loaded = False
+            for logo_path in possible_paths:
+                if logo_path and os.path.exists(logo_path):
+                    logger.info(f"🎨 Loading UI logo from: {logo_path}")
+                    logo_pixmap = QPixmap(logo_path)
+                    if not logo_pixmap.isNull():
+                        # Scale logo to bigger size (64x64)
+                        scaled_logo = logo_pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        logo_label.setPixmap(scaled_logo)
+                        logo_loaded = True
+                        break
+            
+            if not logo_loaded:
+                logger.warning("⚠️ Could not load logo.png for UI, using fallback")
                 # Fallback text if logo not found
                 logo_label.setText("📱")
                 logo_label.setStyleSheet("font-size: 40px;")
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ Error loading UI logo: {e}")
             # Fallback text if error
             logo_label.setText("📱")
             logo_label.setStyleSheet("font-size: 40px;")
@@ -381,19 +438,19 @@ class SimpleTimestampViewer(QMainWindow):
     
     def show_first_run_welcome(self):
         """Show welcome popup for first run"""
-        print("📱 Setting up first run welcome...")
+        logger.info("📱 Setting up first run welcome...")
         
         # Make sure dock icon is visible for first run on macOS
         if sys.platform == "darwin":
             try:
                 import AppKit
-                print("🍎 Setting macOS app policy to Regular...")
+                logger.info("🍎 Setting macOS app policy to Regular...")
                 AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
             except ImportError:
-                print("⚠️ AppKit not available")
+                logger.warning("⚠️ AppKit not available")
         
         # Show the main config window with delay to ensure it appears
-        print("🪟 Showing window...")
+        logger.info("🪟 Showing window...")
         self.show()
         self.raise_()  # Bring to front
         self.activateWindow()  # Focus the window
@@ -401,7 +458,7 @@ class SimpleTimestampViewer(QMainWindow):
         # Force window to be visible and on top
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
         
-        print("🎉 First run detected - config window should be visible now!")
+        logger.info("🎉 First run detected - config window should be visible now!")
     
     def start_using(self):
         """Start using the app (for first run)"""
@@ -417,7 +474,7 @@ class SimpleTimestampViewer(QMainWindow):
                 pass
         
         self.hide()
-        print("✅ Configuration saved! App is now running in background.")
+        logger.info("✅ Configuration saved! App is now running in background.")
     
     def show_config(self):
         """Show config window from tray menu"""
@@ -440,19 +497,40 @@ class SimpleTimestampViewer(QMainWindow):
             
         self.tray_icon = QSystemTrayIcon(self)
         
-        # Use ok.png as icon
+        # Use logo.png as icon with proper path handling
         try:
-            icon_path = "ok.png"
-            pixmap = QPixmap(icon_path)
-            if pixmap.isNull():
-                # Fallback to simple icon if ok.png not found
-                pixmap = QPixmap(16, 16)
+            import os
+            # Try multiple possible paths
+            possible_paths = [
+                "logo.png",
+                os.path.join(os.path.dirname(__file__), "logo.png"),
+                os.path.join(os.path.dirname(sys.executable), "logo.png"),
+                os.path.join(sys._MEIPASS, "logo.png") if hasattr(sys, '_MEIPASS') else None
+            ]
+            
+            icon_loaded = False
+            for icon_path in possible_paths:
+                if icon_path and os.path.exists(icon_path):
+                    logger.info(f"🎨 Loading tray icon from: {icon_path}")
+                    pixmap = QPixmap(icon_path)
+                    if not pixmap.isNull():
+                        # Scale to appropriate tray icon size
+                        scaled_pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        self.tray_icon.setIcon(QIcon(scaled_pixmap))
+                        icon_loaded = True
+                        break
+            
+            if not icon_loaded:
+                logger.warning("⚠️ Could not load logo.png, using fallback icon")
+                # Fallback to simple icon
+                pixmap = QPixmap(32, 32)
                 pixmap.fill(Qt.blue)
-            self.tray_icon.setIcon(QIcon(pixmap))
+                self.tray_icon.setIcon(QIcon(pixmap))
+                
         except Exception as e:
-            print(f"Error loading icon: {e}")
+            logger.error(f"❌ Error loading tray icon: {e}")
             # Fallback to simple icon
-            pixmap = QPixmap(16, 16)
+            pixmap = QPixmap(32, 32)
             pixmap.fill(Qt.blue)
             self.tray_icon.setIcon(QIcon(pixmap))
         
@@ -473,14 +551,21 @@ class SimpleTimestampViewer(QMainWindow):
         
     def setup_cmd_c_monitoring(self):
         """Setup Cmd+C key monitoring"""
-        self.cmd_monitor = CmdCMonitor()
-        self.cmd_monitor.cmd_c_pressed.connect(self.on_cmd_c_detected)
-        self.cmd_monitor.start()
-        
-        # Setup tooltip font
-        QToolTip.setFont(QFont("Monaco", 13, QFont.Bold))
-        
-        print("🎯 Monitoring Cmd+C keypresses...")
+        try:
+            logger.info("🎯 Setting up Cmd+C monitoring...")
+            self.cmd_monitor = CmdCMonitor()
+            self.cmd_monitor.cmd_c_pressed.connect(self.on_cmd_c_detected)
+            self.cmd_monitor.start()
+            
+            # Setup tooltip font
+            QToolTip.setFont(QFont("Monaco", 13, QFont.Bold))
+            
+            logger.info("✅ Cmd+C monitoring started successfully!")
+            logger.info("📝 Note: You may need to grant Accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility")
+            
+        except Exception as e:
+            logger.error(f"❌ Error setting up Cmd+C monitoring: {e}")
+            logger.warning("⚠️ App will still work but won't detect Cmd+C automatically")
     
     def on_show_decimal_changed(self, checked):
         """Handle show decimal checkbox change"""
@@ -512,6 +597,7 @@ class SimpleTimestampViewer(QMainWindow):
         
     def on_cmd_c_detected(self):
         """Handle Cmd+C detection"""
+        logger.info("📋 Cmd+C detected, checking clipboard...")
         # Wait a moment for clipboard to update
         QTimer.singleShot(200, self.check_clipboard_for_timestamp)
         
@@ -522,17 +608,19 @@ class SimpleTimestampViewer(QMainWindow):
             current_text = clipboard.text().strip()
             
             if current_text:
+                logger.info(f"📝 Clipboard content: {current_text[:50]}...")
                 timestamp_str, is_valid = self.get_timestamp(current_text)
                 if is_valid:
+                    logger.info(f"✅ Valid timestamp detected: {timestamp_str}")
                     self.show_tooltip(timestamp_str)
-                    print(f"✅ Timestamp detected via Cmd+C: {timestamp_str}")
+                    logger.info(f"🎯 Tooltip should be displayed now")
                 else:
-                    print(f"ℹ️ Non-timestamp copied: {current_text[:30]}...")
+                    logger.info(f"ℹ️ Non-timestamp content: {current_text[:30]}...")
             else:
-                print("Empty clipboard")
+                logger.warning("📋 Clipboard is empty")
                 
         except Exception as e:
-            print(f"Error checking clipboard: {e}")
+            logger.error(f"❌ Error checking clipboard: {e}", exc_info=True)
         
 
     def get_timestamp(self, text):
@@ -581,8 +669,11 @@ class SimpleTimestampViewer(QMainWindow):
     def show_tooltip(self, timestamp_str):
         """Show tooltip at cursor position"""
         try:
+            logger.info(f"🔄 Converting timestamp: {timestamp_str}")
             # Convert timestamp
             gmt_str, vn_str = self.convert_timestamp(timestamp_str)
+            logger.info(f"🕐 GMT: {gmt_str}")
+            logger.info(f"🕐 VN:  {vn_str}")
             
             # Create tooltip text
             tooltip_text = f"🌍 GMT: {gmt_str}\n🇻🇳 VN:  {vn_str}"
@@ -592,8 +683,10 @@ class SimpleTimestampViewer(QMainWindow):
             
             # Show at cursor position with offset (above and to the right)
             cursor_pos = QCursor.pos()
-            # Điều chỉnh vị trí: sang phải 40px, lên trên 70px (không che timestamp)
             tooltip_pos = QPoint(cursor_pos.x() + 40, cursor_pos.y() - 90)
+            logger.info(f"💬 Showing tooltip at position: {tooltip_pos.x()}, {tooltip_pos.y()}")
+            logger.info(f"💬 Tooltip text: {tooltip_text}")
+            
             QToolTip.showText(tooltip_pos, tooltip_text)
             
             # Set consistent auto-hide timer (3 seconds)
@@ -604,9 +697,11 @@ class SimpleTimestampViewer(QMainWindow):
             self.tooltip_timer.setSingleShot(True)
             self.tooltip_timer.timeout.connect(QToolTip.hideText)
             self.tooltip_timer.start(3000)  # 3 seconds consistent
+            
+            logger.info("✅ Tooltip displayed successfully")
                 
         except Exception as e:
-            print(f"Error showing tooltip: {e}")
+            logger.error(f"❌ Error showing tooltip: {e}", exc_info=True)
             
     def convert_timestamp(self, timestamp_str):
         """Convert timestamp to GMT and VN time"""
@@ -704,8 +799,9 @@ def main():
         except ImportError:
             pass
     
-    print("🚀 QTKit (QuickTime Kit) started!")
-    print("📋 Copy any timestamp to see the magic!")
+    logger.info("🚀 QTKit (QuickTime Kit) started!")
+    logger.info("📋 Copy any timestamp to see the magic!")
+    logger.info(f"📁 Check logs at: ~/Library/Logs/QTKit/qtkit.log")
     
     sys.exit(app.exec())
 
