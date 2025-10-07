@@ -7,14 +7,36 @@ import os
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                               QWidget, QLabel, QSystemTrayIcon, QMenu, QToolTip, 
-                              QCheckBox, QSpinBox, QGroupBox, QPushButton, QMessageBox)
-from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint
-from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor
+                              QCheckBox, QSpinBox, QGroupBox, QPushButton, QMessageBox,
+                              QTextEdit, QScrollArea, QSplitter, QFrame, QTabWidget,
+                              QListWidget, QListWidgetItem, QDialog)
+from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint, QDateTime
+from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor, QColor, QPalette
 from pynput import keyboard
+
+# In-memory log storage for UI
+UI_LOGS = []
+MAX_UI_LOGS = 50
+
+class UILogHandler(logging.Handler):
+    """Custom log handler for UI display"""
+    def emit(self, record):
+        global UI_LOGS
+        if len(UI_LOGS) >= MAX_UI_LOGS:
+            UI_LOGS.pop(0)  # Remove oldest log
+        
+        # Format the log message
+        formatted = self.format(record)
+        UI_LOGS.append({
+            'timestamp': record.created,
+            'level': record.levelname,
+            'message': record.getMessage(),
+            'formatted': formatted
+        })
 
 # Setup logging
 def setup_logging():
-    """Setup logging to file and console"""
+    """Setup logging - reduced file logging, enhanced UI logging"""
     # Create logs directory if not exists
     log_dir = os.path.expanduser("~/Library/Logs/QTKit")
     os.makedirs(log_dir, exist_ok=True)
@@ -22,21 +44,29 @@ def setup_logging():
     # Log file path
     log_file = os.path.join(log_dir, "qtkit.log")
     
-    # Setup logging configuration
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
+    # Create custom formatter
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     
+    # File handler - only for INFO and ERROR
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    
+    # UI handler - for all logs
+    ui_handler = UILogHandler()
+    ui_handler.setLevel(logging.INFO)
+    ui_handler.setFormatter(formatter)
+    
+    # Setup root logger
     logger = logging.getLogger(__name__)
-    logger.info("=" * 50)
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()  # Clear any existing handlers
+    logger.addHandler(file_handler)
+    logger.addHandler(ui_handler)
+    
+    # Startup message
     logger.info("🚀 QTKit starting up...")
     logger.info(f"📁 Log file: {log_file}")
-    logger.info("=" * 50)
     
     return logger
 
@@ -161,6 +191,313 @@ class CmdCMonitor(QThread):
         if self.listener:
             self.listener.stop()
 
+class LogViewerWindow(QDialog):
+    """Log viewer window for debugging"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("QTKit - Log Viewer")
+        self.setGeometry(200, 200, 800, 600)
+        
+        # Set window flags to stay on top
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
+        
+        self.setup_ui()
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.refresh_logs)
+        self.update_timer.start(1000)  # Update every second
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header = QLabel("📋 QTKit Log Viewer")
+        header.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
+        layout.addWidget(header)
+        
+        # Log display
+        self.log_display = QListWidget()
+        self.log_display.setStyleSheet("""
+            QListWidget {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                font-family: 'Monaco', 'Consolas', monospace;
+                font-size: 12px;
+                border: 1px solid #555;
+            }
+            QListWidgetItem {
+                padding: 2px 5px;
+                border-bottom: 1px solid #444;
+            }
+        """)
+        layout.addWidget(self.log_display)
+        
+        # Controls
+        controls_layout = QHBoxLayout()
+        
+        self.auto_scroll_cb = QCheckBox("Auto-scroll")
+        self.auto_scroll_cb.setChecked(True)
+        controls_layout.addWidget(self.auto_scroll_cb)
+        
+        clear_btn = QPushButton("Clear Logs")
+        clear_btn.clicked.connect(self.clear_logs)
+        controls_layout.addWidget(clear_btn)
+        
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_logs)
+        controls_layout.addWidget(refresh_btn)
+        
+        controls_layout.addStretch()
+        
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        controls_layout.addWidget(close_btn)
+        
+        layout.addLayout(controls_layout)
+        
+        # Initial load
+        self.refresh_logs()
+    
+    def refresh_logs(self):
+        """Refresh log display from UI_LOGS"""
+        current_count = self.log_display.count()
+        global UI_LOGS
+        
+        # Only add new logs to avoid flickering
+        if len(UI_LOGS) > current_count:
+            for log_entry in UI_LOGS[current_count:]:
+                item = QListWidgetItem()
+                
+                # Color code by level
+                level_colors = {
+                    'INFO': '#4CAF50',     # Green
+                    'WARNING': '#FF9800',  # Orange  
+                    'ERROR': '#F44336',    # Red
+                    'DEBUG': '#2196F3'     # Blue
+                }
+                
+                color = level_colors.get(log_entry['level'], '#ffffff')
+                
+                # Format timestamp
+                dt = QDateTime.fromSecsSinceEpoch(int(log_entry['timestamp']))
+                time_str = dt.toString("hh:mm:ss")
+                
+                # Set item text and color
+                item.setText(f"[{time_str}] {log_entry['level']}: {log_entry['message']}")
+                item.setForeground(QColor(color))
+                
+                self.log_display.addItem(item)
+        
+        # Auto-scroll to bottom if enabled
+        if self.auto_scroll_cb.isChecked():
+            self.log_display.scrollToBottom()
+    
+    def clear_logs(self):
+        """Clear both UI logs and display"""
+        global UI_LOGS
+        UI_LOGS.clear()
+        self.log_display.clear()
+
+class PermissionsWindow(QDialog):
+    """Permissions checker and manager window"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("QTKit - Permissions Manager")
+        self.setGeometry(300, 300, 600, 500)
+        
+        # Set window flags to stay on top
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
+        
+        self.setup_ui()
+        self.check_timer = QTimer()
+        self.check_timer.timeout.connect(self.refresh_permissions)
+        self.check_timer.start(3000)  # Check every 3 seconds
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header = QLabel("🔐 QTKit Permissions Manager")
+        header.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
+        layout.addWidget(header)
+        
+        # Info text
+        info = QLabel("QTKit cần các quyền sau để hoạt động đầy đủ:")
+        info.setStyleSheet("padding: 5px; color: #666;")
+        layout.addWidget(info)
+        
+        # Permissions list
+        self.permissions_widget = QWidget()
+        self.permissions_layout = QVBoxLayout(self.permissions_widget)
+        layout.addWidget(self.permissions_widget)
+        
+        # Buttons
+        buttons_layout = QHBoxLayout()
+        
+        refresh_btn = QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_permissions)
+        buttons_layout.addWidget(refresh_btn)
+        
+        open_settings_btn = QPushButton("⚙️ Open System Settings")
+        open_settings_btn.clicked.connect(self.open_system_settings) 
+        buttons_layout.addWidget(open_settings_btn)
+        
+        buttons_layout.addStretch()
+        
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        buttons_layout.addWidget(close_btn)
+        
+        layout.addLayout(buttons_layout)
+        
+        # Initial check
+        self.refresh_permissions()
+    
+    def refresh_permissions(self):
+        """Check and display current permission status"""
+        # Clear existing widgets
+        for i in reversed(range(self.permissions_layout.count())):
+            self.permissions_layout.itemAt(i).widget().setParent(None)
+        
+        permissions = [
+            {
+                'name': 'Accessibility',
+                'description': 'Để theo dõi phím tắt Cmd+C',
+                'check_func': self.check_accessibility_permission
+            },
+            {
+                'name': 'Input Monitoring', 
+                'description': 'Để phát hiện keyboard events',
+                'check_func': self.check_input_monitoring_permission
+            }
+        ]
+        
+        for perm in permissions:
+            self.add_permission_widget(perm)
+    
+    def add_permission_widget(self, permission):
+        """Add a permission status widget"""
+        container = QFrame()
+        container.setFrameStyle(QFrame.Box)
+        container.setStyleSheet("""
+            QFrame {
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                margin: 5px;
+                padding: 10px;
+            }
+        """)
+        
+        layout = QHBoxLayout(container)
+        
+        # Permission info
+        info_layout = QVBoxLayout()
+        
+        name_label = QLabel(f"🔐 {permission['name']}")
+        name_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        info_layout.addWidget(name_label)
+        
+        desc_label = QLabel(permission['description'])
+        desc_label.setStyleSheet("color: #666; font-size: 12px;")
+        info_layout.addWidget(desc_label)
+        
+        layout.addLayout(info_layout)
+        layout.addStretch()
+        
+        # Status
+        status_granted = permission['check_func']()
+        
+        if status_granted:
+            status_label = QLabel("✅ Đã cấp quyền")
+            status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+        else:
+            status_label = QLabel("❌ Chưa cấp quyền")  
+            status_label.setStyleSheet("color: #F44336; font-weight: bold;")
+        
+        layout.addWidget(status_label)
+        
+        # Open settings button for this permission
+        if not status_granted:
+            open_btn = QPushButton("Mở Settings")
+            open_btn.clicked.connect(lambda: self.open_permission_settings(permission['name']))
+            layout.addWidget(open_btn)
+        
+        self.permissions_layout.addWidget(container)
+    
+    def check_accessibility_permission(self):
+        """Check Accessibility permission"""
+        try:
+            test_listener = keyboard.Listener(on_press=lambda key: None)
+            test_listener.start()
+            test_listener.stop()
+            return True
+        except Exception as e:
+            error_msg = str(e).lower()
+            return not any(word in error_msg for word in ["not trusted", "accessibility", "permission", "denied"])
+    
+    def check_input_monitoring_permission(self):
+        """Check Input Monitoring permission"""
+        try:
+            import subprocess
+            result = subprocess.run([
+                "osascript", "-e", 
+                'tell application "System Events" to get application processes'
+            ], capture_output=True, text=True, check=True, timeout=3)
+            return result.returncode == 0
+        except:
+            return False
+    
+    def open_permission_settings(self, permission_name):
+        """Open system settings for specific permission"""
+        try:
+            import subprocess
+            
+            if permission_name == "Accessibility":
+                commands = [
+                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+                    ["open", "/System/Library/PreferencePanes/Security.prefPane"]
+                ]
+            elif permission_name == "Input Monitoring":
+                commands = [
+                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"], 
+                    ["open", "/System/Library/PreferencePanes/Security.prefPane"]
+                ]
+            else:
+                commands = [
+                    ["open", "/System/Library/PreferencePanes/Security.prefPane"]
+                ]
+            
+            for cmd in commands:
+                try:
+                    subprocess.call(cmd)
+                    break
+                except:
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to open settings: {e}")
+    
+    def open_system_settings(self):
+        """Open general system settings"""
+        try:
+            import subprocess
+            commands = [
+                ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy"],
+                ["open", "/System/Library/PreferencePanes/Security.prefPane"],
+                ["open", "-b", "com.apple.preference.security"]
+            ]
+            
+            for cmd in commands:
+                try:
+                    subprocess.call(cmd)
+                    break
+                except:
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to open system settings: {e}")
+
 class SimpleTimestampViewer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -169,6 +506,9 @@ class SimpleTimestampViewer(QMainWindow):
         self.load_settings()
         self.setup_ui()
         self.setup_tray()
+        
+        # Hide dock icon for tray-only app
+        self.hide_dock_icon_if_needed()
         
         # Force request permissions on EVERY startup
         self.force_request_permissions()
@@ -658,6 +998,18 @@ class SimpleTimestampViewer(QMainWindow):
         # Add separator
         tray_menu.addSeparator()
         
+        # Debug and tools
+        logs_action = QAction("📋 Xem logs", self)
+        logs_action.triggered.connect(self.show_logs)
+        tray_menu.addAction(logs_action)
+        
+        permissions_action = QAction("🔐 Kiểm tra quyền", self)
+        permissions_action.triggered.connect(self.show_permissions)
+        tray_menu.addAction(permissions_action)
+        
+        # Add separator
+        tray_menu.addSeparator()
+        
         # Status and help
         status_action = QAction("📊 Trạng thái: Đang chạy", self)
         status_action.setEnabled(False)  # Just for display
@@ -825,6 +1177,27 @@ System Preferences → Security & Privacy → Privacy → Accessibility"""
                     
         except Exception as e:
             logger.error(f"❌ Failed to open System Preferences: {e}")
+            
+    def hide_dock_icon_if_needed(self):
+        """Hide dock icon on macOS when running as tray app"""
+        try:
+            if sys.platform == 'darwin':
+                app = QApplication.instance()
+                if app:
+                    app.setAttribute(Qt.AA_DontShowIconsInMenus, True)
+                    # Hide from dock using macOS specific method
+                    try:
+                        import objc
+                        from Foundation import NSBundle
+                        bundle = NSBundle.mainBundle()
+                        if bundle:
+                            info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+                            if info:
+                                info['LSUIElement'] = True
+                    except ImportError:
+                        pass  # objc not available, skip dock hiding
+        except Exception as e:
+            logger.error(f"Failed to hide dock icon: {e}")
         
     def setup_cmd_c_monitoring(self):
         """Setup Cmd+C key monitoring"""
@@ -933,6 +1306,58 @@ System Settings → Privacy & Security → Accessibility"""
         self.show_decimal = checked
         self.update_decimal_ui_state()
         self.save_settings()
+        
+    def show_logs(self):
+        """Show logs window"""
+        try:
+            if not hasattr(self, 'log_viewer') or self.log_viewer is None:
+                self.log_viewer = LogViewerWindow()
+            
+            # Set window flags to stay on top
+            self.log_viewer.setWindowFlags(
+                Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint
+            )
+            
+            self.log_viewer.show()
+            self.log_viewer.activateWindow()
+            self.log_viewer.raise_()
+            
+            # Force focus on macOS
+            if sys.platform == 'darwin':
+                try:
+                    import AppKit
+                    AppKit.NSApp.activateIgnoringOtherApps_(True)
+                except ImportError:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"Failed to show logs window: {e}")
+            
+    def show_permissions(self):
+        """Show permissions window"""
+        try:
+            if not hasattr(self, 'permissions_window') or self.permissions_window is None:
+                self.permissions_window = PermissionsWindow()
+            
+            # Set window flags to stay on top
+            self.permissions_window.setWindowFlags(
+                Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint
+            )
+            
+            self.permissions_window.show()
+            self.permissions_window.activateWindow()
+            self.permissions_window.raise_()
+            
+            # Force focus on macOS
+            if sys.platform == 'darwin':
+                try:
+                    import AppKit
+                    AppKit.NSApp.activateIgnoringOtherApps_(True)
+                except ImportError:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"Failed to show permissions window: {e}")
     
     def on_decimal_places_changed(self, value):
         """Handle decimal places change"""
@@ -958,7 +1383,6 @@ System Settings → Privacy & Security → Accessibility"""
         
     def on_cmd_c_detected(self):
         """Handle Cmd+C detection"""
-        logger.info("📋 Cmd+C detected, checking clipboard...")
         # Wait a moment for clipboard to update
         QTimer.singleShot(200, self.check_clipboard_for_timestamp)
         
@@ -969,19 +1393,16 @@ System Settings → Privacy & Security → Accessibility"""
             current_text = clipboard.text().strip()
             
             if current_text:
-                logger.info(f"📝 Clipboard content: {current_text[:50]}...")
                 timestamp_str, is_valid = self.get_timestamp(current_text)
                 if is_valid:
-                    logger.info(f"✅ Valid timestamp detected: {timestamp_str}")
+                    logger.info(f"✅ Timestamp detected: {timestamp_str}")
                     self.show_tooltip(timestamp_str)
-                    logger.info(f"🎯 Tooltip should be displayed now")
-                else:
-                    logger.info(f"ℹ️ Non-timestamp content: {current_text[:30]}...")
+                # Don't log non-timestamp content to reduce spam
             else:
                 logger.warning("📋 Clipboard is empty")
                 
         except Exception as e:
-            logger.error(f"❌ Error checking clipboard: {e}", exc_info=True)
+            logger.error(f"❌ Error checking clipboard: {e}")
         
 
     def get_timestamp(self, text):
@@ -1030,11 +1451,8 @@ System Settings → Privacy & Security → Accessibility"""
     def show_tooltip(self, timestamp_str):
         """Show tooltip at cursor position"""
         try:
-            logger.info(f"🔄 Converting timestamp: {timestamp_str}")
             # Convert timestamp
             gmt_str, vn_str = self.convert_timestamp(timestamp_str)
-            logger.info(f"🕐 GMT: {gmt_str}")
-            logger.info(f"🕐 VN:  {vn_str}")
             
             # Create tooltip text
             tooltip_text = f"🌍 GMT: {gmt_str}\n🇻🇳 VN:  {vn_str}"
@@ -1045,8 +1463,6 @@ System Settings → Privacy & Security → Accessibility"""
             # Show at cursor position with offset (above and to the right)
             cursor_pos = QCursor.pos()
             tooltip_pos = QPoint(cursor_pos.x() + 40, cursor_pos.y() - 90)
-            logger.info(f"💬 Showing tooltip at position: {tooltip_pos.x()}, {tooltip_pos.y()}")
-            logger.info(f"💬 Tooltip text: {tooltip_text}")
             
             QToolTip.showText(tooltip_pos, tooltip_text)
             
@@ -1059,10 +1475,10 @@ System Settings → Privacy & Security → Accessibility"""
             self.tooltip_timer.timeout.connect(QToolTip.hideText)
             self.tooltip_timer.start(3000)  # 3 seconds consistent
             
-            logger.info("✅ Tooltip displayed successfully")
+            logger.info(f"✅ Tooltip shown: {gmt_str} / {vn_str}")
                 
         except Exception as e:
-            logger.error(f"❌ Error showing tooltip: {e}", exc_info=True)
+            logger.error(f"❌ Error showing tooltip: {e}")
             
     def convert_timestamp(self, timestamp_str):
         """Convert timestamp to GMT and VN time"""
