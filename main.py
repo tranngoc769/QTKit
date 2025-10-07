@@ -219,6 +219,9 @@ class LogViewerWindow(QDialog):
         layout.addWidget(header)
         
         # Log display
+        # Connect close event for cleanup
+        self.setAttribute(Qt.WA_DeleteOnClose, False)  # Don't delete, just hide
+        
         self.log_display = QListWidget()
         self.log_display.setStyleSheet("""
             QListWidget {
@@ -506,6 +509,7 @@ class SimpleTimestampViewer(QMainWindow):
         super().__init__()
         self.last_clipboard_text = ""
         self.settings = QSettings("QTKit", "Settings")
+        self.dock_icon_visible = False  # Track dock icon state
         self.load_settings()
         self.setup_ui()
         self.setup_tray()
@@ -532,9 +536,20 @@ class SimpleTimestampViewer(QMainWindow):
         logger.info(f"🔍 First run status: {self.first_run}")
         if self.first_run:
             logger.info("🎯 Showing first run welcome...")
-            self.show_first_run_welcome()
+            # Delay first run welcome for smoother startup
+            QTimer.singleShot(200, self.show_first_run_welcome)
         else:
             logger.info("👻 Not first run - running in background")
+    
+    def delayed_startup(self):
+        """Delayed startup operations for better performance"""
+        try:
+            # Force request permissions on EVERY startup
+            self.force_request_permissions()
+            
+            self.setup_cmd_c_monitoring()
+        except Exception as e:
+            logger.error(f"Error in delayed startup: {e}")
     
     def load_settings(self):
         """Load settings from QSettings"""
@@ -867,7 +882,7 @@ class SimpleTimestampViewer(QMainWindow):
             button_layout.addWidget(start_btn)
         else:
             hide_btn = QPushButton("Ẩn cửa sổ")
-            hide_btn.clicked.connect(self.hide)
+            hide_btn.clicked.connect(self.hide_config)
             hide_btn.setStyleSheet("""
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
                     stop:0 #6c757d, stop:1 #5a6268);
@@ -924,6 +939,8 @@ class SimpleTimestampViewer(QMainWindow):
         # Mark first run as completed
         self.mark_first_run_completed()
         
+        self.hide()
+        
         # Hide dock icon on macOS after first setup
         if sys.platform == "darwin":
             try:
@@ -932,7 +949,6 @@ class SimpleTimestampViewer(QMainWindow):
             except ImportError:
                 pass
         
-        self.hide()
         logger.info("✅ Configuration saved! App is now running in background.")
     
     def show_config(self):
@@ -942,12 +958,33 @@ class SimpleTimestampViewer(QMainWindow):
             try:
                 import AppKit
                 AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+                self.dock_icon_visible = True
             except ImportError:
                 pass
         
         self.show()
         self.raise_()
         self.activateWindow()
+    
+    def hide_config(self):
+        """Hide config window and dock icon"""
+        self.hide()
+        
+        # Only hide dock icon if no other dialogs are open
+        if sys.platform == "darwin" and self.dock_icon_visible:
+            # Check if any dialogs are still open
+            has_open_dialogs = (
+                (hasattr(self, 'log_viewer') and self.log_viewer and self.log_viewer.isVisible()) or
+                (hasattr(self, 'permissions_window') and self.permissions_window and self.permissions_window.isVisible())
+            )
+            
+            if not has_open_dialogs:
+                try:
+                    import AppKit
+                    AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+                    self.dock_icon_visible = False
+                except ImportError:
+                    pass
     
     def show_help(self):
         """Show help dialog"""
@@ -1139,7 +1176,23 @@ class SimpleTimestampViewer(QMainWindow):
         button_layout.addWidget(contact_btn)
         
         close_btn = QPushButton("Đóng")
-        close_btn.clicked.connect(dialog.close)
+        def close_help_dialog():
+            dialog.close()
+            # Auto-hide dock icon if config window is also hidden
+            if sys.platform == "darwin" and not self.isVisible():
+                has_other_dialogs = (
+                    (hasattr(self, 'log_viewer') and self.log_viewer and self.log_viewer.isVisible()) or
+                    (hasattr(self, 'permissions_window') and self.permissions_window and self.permissions_window.isVisible())
+                )
+                if not has_other_dialogs:
+                    try:
+                        import AppKit
+                        AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+                        self.dock_icon_visible = False
+                    except ImportError:
+                        pass
+        
+        close_btn.clicked.connect(close_help_dialog)
         close_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
@@ -1160,21 +1213,23 @@ class SimpleTimestampViewer(QMainWindow):
         
         layout.addLayout(button_layout)
         
-        # Show temporarily with dock icon
-        if sys.platform == "darwin":
+        # Show with existing dock icon policy (don't change it)
+        if sys.platform == "darwin" and not self.dock_icon_visible:
             try:
                 import AppKit
                 AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+                self.dock_icon_visible = True
             except ImportError:
                 pass
         
         dialog.exec_()
         
-        # Hide dock icon again
-        if sys.platform == "darwin":
+        # Only hide dock icon if config window is not visible
+        if sys.platform == "darwin" and not self.isVisible():
             try:
                 import AppKit
                 AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+                self.dock_icon_visible = False
             except ImportError:
                 pass
         
@@ -1548,25 +1603,26 @@ System Settings → Privacy & Security → Accessibility"""
     def show_logs(self):
         """Show logs window"""
         try:
+            # Lazy loading for better performance
             if not hasattr(self, 'log_viewer') or self.log_viewer is None:
                 self.log_viewer = LogViewerWindow()
+                # Set window flags only once during creation
+                self.log_viewer.setWindowFlags(
+                    Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint
+                )
             
-            # Set window flags to stay on top
-            self.log_viewer.setWindowFlags(
-                Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint
-            )
+            # Ensure dock icon is visible if needed
+            if sys.platform == 'darwin' and not self.dock_icon_visible:
+                try:
+                    import AppKit
+                    AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+                    self.dock_icon_visible = True
+                except ImportError:
+                    pass
             
             self.log_viewer.show()
             self.log_viewer.activateWindow()
             self.log_viewer.raise_()
-            
-            # Force focus on macOS
-            if sys.platform == 'darwin':
-                try:
-                    import AppKit
-                    AppKit.NSApp.activateIgnoringOtherApps_(True)
-                except ImportError:
-                    pass
                     
         except Exception as e:
             logger.error(f"Failed to show logs window: {e}")
@@ -1574,25 +1630,26 @@ System Settings → Privacy & Security → Accessibility"""
     def show_permissions(self):
         """Show permissions window"""
         try:
+            # Lazy loading for better performance
             if not hasattr(self, 'permissions_window') or self.permissions_window is None:
                 self.permissions_window = PermissionsWindow()
+                # Set window flags only once during creation
+                self.permissions_window.setWindowFlags(
+                    Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint
+                )
             
-            # Set window flags to stay on top
-            self.permissions_window.setWindowFlags(
-                Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint
-            )
+            # Ensure dock icon is visible if needed
+            if sys.platform == 'darwin' and not self.dock_icon_visible:
+                try:
+                    import AppKit
+                    AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+                    self.dock_icon_visible = True
+                except ImportError:
+                    pass
             
             self.permissions_window.show()
             self.permissions_window.activateWindow()
             self.permissions_window.raise_()
-            
-            # Force focus on macOS
-            if sys.platform == 'darwin':
-                try:
-                    import AppKit
-                    AppKit.NSApp.activateIgnoringOtherApps_(True)
-                except ImportError:
-                    pass
                     
         except Exception as e:
             logger.error(f"Failed to show permissions window: {e}")
@@ -1838,6 +1895,8 @@ THÔNG TIN:
     def closeEvent(self, event):
         """Handle close event"""
         if self.tray_icon and self.tray_icon.isVisible():
+            self.hide()
+            
             # Hide dock icon again on macOS when closing config window
             if sys.platform == "darwin" and not self.first_run:
                 try:
@@ -1846,7 +1905,6 @@ THÔNG TIN:
                 except ImportError:
                     pass
             
-            self.hide()
             event.ignore()
         else:
             self.quit_app()
