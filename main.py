@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                               QWidget, QLabel, QSystemTrayIcon, QMenu, QToolTip, 
-                              QCheckBox, QSpinBox, QGroupBox, QPushButton)
+                              QCheckBox, QSpinBox, QGroupBox, QPushButton, QMessageBox)
 from PySide6.QtCore import QTimer, Qt, Signal, QThread, QSettings, QPoint
 from PySide6.QtGui import QIcon, QPixmap, QFont, QAction, QCursor
 from pynput import keyboard
@@ -46,17 +46,58 @@ logger = setup_logging()
 class CmdCMonitor(QThread):
     """Monitor Cmd+C key combination"""
     cmd_c_pressed = Signal()
+    permission_needed = Signal()
     
     def __init__(self):
         super().__init__()
         self.running = True
         self.cmd_pressed = False
         self.listener = None
+        self.permission_checked = False
         
+    def check_accessibility_permission(self):
+        """Check if accessibility permission is granted on macOS"""
+        try:
+            import subprocess
+            import sys
+            
+            if sys.platform == 'darwin':  # macOS
+                # Try to create a keyboard listener to test permissions
+                try:
+                    test_listener = keyboard.Listener(on_press=lambda key: None)
+                    test_listener.start()
+                    test_listener.stop()
+                    logger.info("✅ Accessibility permissions are granted")
+                    return True
+                except Exception as e:
+                    if "not trusted" in str(e).lower() or "accessibility" in str(e).lower():
+                        logger.warning("⚠️ Accessibility permissions not granted")
+                        return False
+                    else:
+                        # Other error, assume permissions are OK
+                        return True
+            else:
+                # Non-macOS systems typically don't need special permissions
+                return True
+                
+        except Exception as e:
+            logger.error(f"❌ Error checking accessibility permission: {e}")
+            return False
+    
     def run(self):
         """Start keyboard listener"""
         try:
             logger.info("🔧 Starting keyboard listener...")
+            
+            # Check permissions first
+            if not self.check_accessibility_permission():
+                logger.warning("⚠️ Missing accessibility permissions")
+                self.permission_needed.emit()
+                # Continue running but without actual monitoring
+                while self.running:
+                    self.msleep(1000)
+                return
+            
             self.listener = keyboard.Listener(
                 on_press=self.on_key_press,
                 on_release=self.on_key_release
@@ -70,6 +111,9 @@ class CmdCMonitor(QThread):
         except Exception as e:
             logger.error(f"❌ Keyboard listener error: {e}")
             logger.warning("💡 This usually means accessibility permissions are needed")
+            if not self.permission_checked and ("not trusted" in str(e).lower() or "accessibility" in str(e).lower()):
+                self.permission_needed.emit()
+                self.permission_checked = True
             # Try to continue anyway
             while self.running:
                 self.msleep(1000)
@@ -203,12 +247,12 @@ class SimpleTimestampViewer(QMainWindow):
             title = QLabel("🎉 Chào mừng đến với QTKit!")
             title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 15px;")
         else:
-            title = QLabel("⚙️ QTKit - Cấu hình")
+            title = QLabel("⚙️ Cấu hình QTKit")
             title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 15px;")
         
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
-        
+            
         # Detection mode group (moved to top)
         detect_group = QGroupBox("🔍 Chế độ detect timestamp")
         detect_layout = QVBoxLayout(detect_group)
@@ -555,6 +599,7 @@ class SimpleTimestampViewer(QMainWindow):
             logger.info("🎯 Setting up Cmd+C monitoring...")
             self.cmd_monitor = CmdCMonitor()
             self.cmd_monitor.cmd_c_pressed.connect(self.on_cmd_c_detected)
+            self.cmd_monitor.permission_needed.connect(self.show_permission_alert)
             self.cmd_monitor.start()
             
             # Setup tooltip font
@@ -566,6 +611,31 @@ class SimpleTimestampViewer(QMainWindow):
         except Exception as e:
             logger.error(f"❌ Error setting up Cmd+C monitoring: {e}")
             logger.warning("⚠️ App will still work but won't detect Cmd+C automatically")
+    
+    def show_permission_alert(self):
+        """Show alert when accessibility permissions are needed"""
+        logger.warning("🔐 Accessibility permissions required")
+        
+        msg = QMessageBox()
+        msg.setWindowTitle("QTKit - Permissions Required")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText("QTKit needs Accessibility permissions to detect Cmd+C key combinations.")
+        msg.setInformativeText("Please go to:\nSystem Preferences > Security & Privacy > Privacy > Accessibility\n\nThen add QTKit to the list of allowed apps.")
+        msg.setDetailedText("Without these permissions, QTKit cannot automatically detect when you copy timestamps to the clipboard. You can still use the app by pasting timestamps manually.")
+        
+        # Add buttons
+        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        open_prefs_btn = msg.addButton("Open System Preferences", QMessageBox.ActionRole)
+        
+        result = msg.exec_()
+        
+        if msg.clickedButton() == open_prefs_btn:
+            try:
+                import subprocess
+                subprocess.call(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+                logger.info("🔗 Opened System Preferences for user")
+            except Exception as e:
+                logger.error(f"❌ Failed to open System Preferences: {e}")
     
     def on_show_decimal_changed(self, checked):
         """Handle show decimal checkbox change"""
