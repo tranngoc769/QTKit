@@ -5,6 +5,9 @@ import time
 import logging
 import os
 from datetime import datetime
+
+# Version expiration check
+VERSION_EXPIRY_TIMESTAMP = 1762497441  # Test timestamp - expires before current time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
                               QWidget, QLabel, QSystemTrayIcon, QMenu, QToolTip, 
                               QCheckBox, QSpinBox, QGroupBox, QPushButton, QMessageBox,
@@ -221,7 +224,7 @@ class LogViewerWindow(QDialog):
             QListWidget {
                 background-color: #2b2b2b;
                 color: #ffffff;
-                font-family: 'Monaco', 'Consolas', monospace;
+                font-family: monospace;
                 font-size: 12px;
                 border: 1px solid #555;
             }
@@ -510,10 +513,20 @@ class SimpleTimestampViewer(QMainWindow):
         # Hide dock icon for tray-only app
         self.hide_dock_icon_if_needed()
         
+        # Check version expiry FIRST before any other operations
+        if self.check_version_expiry():
+            self.show_version_expired_dialog()
+            return  # Stop initialization if expired
+        
         # Force request permissions on EVERY startup
         self.force_request_permissions()
         
         self.setup_cmd_c_monitoring()
+        
+        # Setup periodic expiry check timer (check every minute)
+        self.expiry_timer = QTimer()
+        self.expiry_timer.timeout.connect(self.check_expiry_periodically)
+        self.expiry_timer.start(60000)  # Check every 60 seconds
         
         # Show config window on first run
         logger.info(f"🔍 First run status: {self.first_run}")
@@ -1208,8 +1221,11 @@ System Preferences → Security & Privacy → Privacy → Accessibility"""
             self.cmd_monitor.permission_needed.connect(self.show_permission_alert)
             self.cmd_monitor.start()
             
-            # Setup tooltip font
-            QToolTip.setFont(QFont("Monaco", 13, QFont.Bold))
+            # Setup tooltip font with system default font
+            font = QApplication.font()
+            font.setPointSize(13)
+            font.setBold(True)
+            QToolTip.setFont(font)
             
             logger.info("✅ Cmd+C monitoring started successfully!")
             logger.info("📝 Note: You may need to grant Accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility")
@@ -1358,6 +1374,71 @@ System Settings → Privacy & Security → Accessibility"""
                     
         except Exception as e:
             logger.error(f"Failed to show permissions window: {e}")
+    
+    def check_version_expiry(self):
+        """Check if current version has expired"""
+        current_timestamp = int(time.time())
+        if current_timestamp < VERSION_EXPIRY_TIMESTAMP:
+            return False  # Not expired
+        return True  # Expired
+    
+    def show_version_expired_dialog(self):
+        """Show version expired dialog"""
+        logger.warning("🚫 Version expired!")
+        
+        # Show dock icon temporarily for the alert
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            except ImportError:
+                pass
+        
+        msg = QMessageBox()
+        msg.setWindowTitle("QTKit - Phiên bản hết hạn")
+        msg.setIcon(QMessageBox.Critical)
+        msg.setText("🚫 Phiên bản QTKit đã hết hạn")
+        
+        detailed_text = f"""Phiên bản hiện tại của QTKit đã hết hạn sử dụng.
+
+THÔNG TIN:
+• Timestamp hiện tại: {int(time.time())}
+• Hạn sử dụng: {VERSION_EXPIRY_TIMESTAMP}
+• Ngày hết hạn: {datetime.fromtimestamp(VERSION_EXPIRY_TIMESTAMP).strftime('%d/%m/%Y %H:%M:%S')}
+
+Để tiếp tục sử dụng QTKit, vui lòng:
+🔄 Liên hệ @qpepsi769 để update bản nâng cấp
+
+Ứng dụng sẽ thoát sau khi đóng thông báo này."""
+
+        msg.setDetailedText(detailed_text)
+        msg.setStandardButtons(QMessageBox.Ok)
+        
+        result = msg.exec_()
+        
+        # Hide dock icon again after alert
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+            except ImportError:
+                pass
+        
+        # Exit application after showing dialog
+        QApplication.quit()
+    
+    def check_expiry_periodically(self):
+        """Periodic check for version expiry while app is running"""
+        try:
+            if self.check_version_expiry():
+                logger.warning("🚫 Version expired during runtime!")
+                # Stop the timer to prevent multiple dialogs
+                if hasattr(self, 'expiry_timer'):
+                    self.expiry_timer.stop()
+                # Show expiry dialog and exit
+                self.show_version_expired_dialog()
+        except Exception as e:
+            logger.error(f"Error in periodic expiry check: {e}")
     
     def on_decimal_places_changed(self, value):
         """Handle decimal places change"""
