@@ -62,7 +62,7 @@ class CmdCMonitor(QThread):
             import sys
             
             if sys.platform == 'darwin':  # macOS
-                # Try to create a keyboard listener to test permissions
+                # Method 1: Try creating keyboard listener to test permissions
                 try:
                     test_listener = keyboard.Listener(on_press=lambda key: None)
                     test_listener.start()
@@ -70,12 +70,28 @@ class CmdCMonitor(QThread):
                     logger.info("✅ Accessibility permissions are granted")
                     return True
                 except Exception as e:
-                    if "not trusted" in str(e).lower() or "accessibility" in str(e).lower():
+                    error_msg = str(e).lower()
+                    if any(word in error_msg for word in ["not trusted", "accessibility", "permission", "denied"]):
                         logger.warning("⚠️ Accessibility permissions not granted")
                         return False
                     else:
-                        # Other error, assume permissions are OK
-                        return True
+                        # Method 2: Check via system command as fallback
+                        try:
+                            result = subprocess.run([
+                                "osascript", "-e", 
+                                'tell application "System Events" to get application processes'
+                            ], capture_output=True, text=True, timeout=5)
+                            
+                            if result.returncode == 0:
+                                logger.info("✅ System Events accessible - permissions OK")
+                                return True
+                            else:
+                                logger.warning("⚠️ System Events not accessible - permissions needed")
+                                return False
+                        except:
+                            # If all methods fail, assume permissions needed
+                            logger.warning("⚠️ Cannot verify permissions - assuming needed")
+                            return False
             else:
                 # Non-macOS systems typically don't need special permissions
                 return True
@@ -682,26 +698,84 @@ class SimpleTimestampViewer(QMainWindow):
         """Show alert when accessibility permissions are needed"""
         logger.warning("🔐 Accessibility permissions required")
         
+        # Show dock icon temporarily for the alert
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            except ImportError:
+                pass
+        
         msg = QMessageBox()
-        msg.setWindowTitle("QTKit - Permissions Required")
+        msg.setWindowTitle("QTKit - Cần cấp quyền")
         msg.setIcon(QMessageBox.Warning)
-        msg.setText("QTKit needs Accessibility permissions to detect Cmd+C key combinations.")
-        msg.setInformativeText("Please go to:\nSystem Preferences > Security & Privacy > Privacy > Accessibility\n\nThen add QTKit to the list of allowed apps.")
-        msg.setDetailedText("Without these permissions, QTKit cannot automatically detect when you copy timestamps to the clipboard. You can still use the app by pasting timestamps manually.")
+        msg.setText("🔐 QTKit cần quyền Accessibility để phát hiện phím Cmd+C")
+        
+        detailed_text = """QTKit cần quyền Accessibility để:
+• Theo dõi tổ hợp phím Cmd+C
+• Tự động phát hiện timestamp trong clipboard
+• Hiển thị tooltip với thời gian chuyển đổi
+
+Không có quyền này, QTKit sẽ không thể hoạt động tự động.
+
+CÁCH CÁP QUYỀN:
+1. Mở System Preferences (System Settings trên macOS 13+)
+2. Vào Security & Privacy → Privacy → Accessibility
+3. Click khóa để mở khóa (nhập password)
+4. Tìm và tick chọn QTKit
+5. Khởi động lại QTKit
+
+LƯU Ý: Trên macOS mới, có thể cần vào:
+System Settings → Privacy & Security → Accessibility"""
+        
+        msg.setInformativeText("System Preferences → Security & Privacy → Privacy → Accessibility\n\nThêm QTKit vào danh sách ứng dụng được phép.")
+        msg.setDetailedText(detailed_text)
         
         # Add buttons
-        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-        open_prefs_btn = msg.addButton("Open System Preferences", QMessageBox.ActionRole)
+        msg.setStandardButtons(QMessageBox.Ok)
+        open_prefs_btn = msg.addButton("Mở System Preferences", QMessageBox.ActionRole)
+        retry_btn = msg.addButton("Thử lại", QMessageBox.ActionRole)
         
         result = msg.exec_()
+        
+        # Hide dock icon again after alert
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+            except ImportError:
+                pass
         
         if msg.clickedButton() == open_prefs_btn:
             try:
                 import subprocess
-                subprocess.call(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
-                logger.info("🔗 Opened System Preferences for user")
+                # Try multiple ways to open preferences
+                commands = [
+                    ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+                    ["open", "/System/Library/PreferencePanes/Security.prefPane"],
+                    ["open", "-b", "com.apple.preference.security"]
+                ]
+                
+                for cmd in commands:
+                    try:
+                        subprocess.call(cmd)
+                        logger.info(f"🔗 Opened System Preferences: {' '.join(cmd)}")
+                        break
+                    except:
+                        continue
+                        
             except Exception as e:
                 logger.error(f"❌ Failed to open System Preferences: {e}")
+                
+        elif msg.clickedButton() == retry_btn:
+            # Retry permission check
+            if self.check_accessibility_permission():
+                logger.info("✅ Permissions granted! Restarting keyboard monitoring...")
+                if hasattr(self, 'cmd_monitor'):
+                    self.cmd_monitor.stop()
+                self.setup_cmd_c_monitoring()
+            else:
+                logger.warning("⚠️ Permissions still not granted")
     
     def on_show_decimal_changed(self, checked):
         """Handle show decimal checkbox change"""
