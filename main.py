@@ -169,6 +169,10 @@ class SimpleTimestampViewer(QMainWindow):
         self.load_settings()
         self.setup_ui()
         self.setup_tray()
+        
+        # Force request permissions on EVERY startup
+        self.force_request_permissions()
+        
         self.setup_cmd_c_monitoring()
         
         # Show config window on first run
@@ -674,6 +678,153 @@ class SimpleTimestampViewer(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
         self.tray_icon.setToolTip("QTKit - QuickTime Kit\n🎯 Nhấn Cmd+C trên timestamp để xem thời gian\n⚙️ Right-click để cấu hình")
+    
+    def force_request_permissions(self):
+        """Force request both Accessibility and Input Monitoring permissions on every startup"""
+        logger.info("🔐 Force requesting permissions on startup...")
+        
+        if sys.platform != "darwin":
+            return True
+        
+        permissions_needed = []
+        
+        # Test Accessibility permission
+        try:
+            test_listener = keyboard.Listener(on_press=lambda key: None)
+            test_listener.start()
+            test_listener.stop()
+            logger.info("✅ Accessibility permission already granted")
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(word in error_msg for word in ["not trusted", "accessibility", "permission", "denied"]):
+                logger.warning("⚠️ Accessibility permission needed")
+                permissions_needed.append("Accessibility")
+        
+        # Test Input Monitoring permission via AppleScript
+        try:
+            import subprocess
+            subprocess.run([
+                "osascript", "-e", 
+                'tell application "System Events" to get application processes'
+            ], capture_output=True, text=True, check=True, timeout=3)
+            logger.info("✅ Input Monitoring permission already granted")
+        except:
+            logger.warning("⚠️ Input Monitoring permission needed")
+            permissions_needed.append("Input Monitoring")
+        
+        # If any permissions needed, show comprehensive alert
+        if permissions_needed:
+            self.show_startup_permission_alert(permissions_needed)
+            return False
+        else:
+            logger.info("✅ All permissions granted")
+            return True
+    
+    def show_startup_permission_alert(self, permissions_needed):
+        """Show comprehensive permission alert on startup"""
+        logger.warning(f"🔐 Permissions needed: {', '.join(permissions_needed)}")
+        
+        # Show dock icon temporarily for the alert
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            except ImportError:
+                pass
+        
+        msg = QMessageBox()
+        msg.setWindowTitle("QTKit - Cần cấp quyền bắt buộc")
+        msg.setIcon(QMessageBox.Warning)
+        
+        if len(permissions_needed) > 1:
+            msg.setText("🔐 QTKit cần CẢ HAI quyền để hoạt động:")
+        else:
+            msg.setText(f"🔐 QTKit cần quyền {permissions_needed[0]} để hoạt động:")
+        
+        permissions_text = ""
+        if "Accessibility" in permissions_needed:
+            permissions_text += "• ACCESSIBILITY: Để theo dõi phím Cmd+C\n"
+        if "Input Monitoring" in permissions_needed:
+            permissions_text += "• INPUT MONITORING: Để phát hiện keyboard events\n"
+        
+        detailed_text = f"""QTKit yêu cầu các quyền sau để hoạt động:
+
+{permissions_text}
+CÁCH CẤP QUYỀN (macOS 10.15+):
+
+1️⃣ Mở System Preferences/System Settings
+2️⃣ Vào Security & Privacy → Privacy 
+   (hoặc Privacy & Security trên macOS 13+)
+3️⃣ Tìm và click vào:
+   - "Accessibility" (nếu cần)
+   - "Input Monitoring" (nếu cần)
+4️⃣ Click khóa 🔒 để unlock (nhập password)
+5️⃣ Tick chọn ☑️ QTKit trong danh sách
+6️⃣ Khởi động lại QTKit
+
+LƯU Ý QUAN TRỌNG:
+• Cần CẢ HAI quyền mới hoạt động đầy đủ
+• Nếu không cấp quyền, app sẽ không detect Cmd+C
+• Có thể cần khởi động lại app sau khi cấp quyền
+
+TRÊN MACOS CŨ (10.14-):
+System Preferences → Security & Privacy → Privacy → Accessibility"""
+        
+        msg.setInformativeText("System Preferences → Security & Privacy → Privacy\n\nCấp quyền Accessibility VÀ Input Monitoring cho QTKit")
+        msg.setDetailedText(detailed_text)
+        
+        # Add buttons
+        msg.setStandardButtons(QMessageBox.Ok)
+        open_prefs_btn = msg.addButton("Mở System Preferences", QMessageBox.ActionRole)
+        retry_btn = msg.addButton("Thử lại", QMessageBox.ActionRole)
+        continue_btn = msg.addButton("Tiếp tục (không đầy đủ chức năng)", QMessageBox.ActionRole)
+        
+        result = msg.exec_()
+        
+        # Hide dock icon again after alert
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+            except ImportError:
+                pass
+        
+        if msg.clickedButton() == open_prefs_btn:
+            self.open_system_preferences()
+        elif msg.clickedButton() == retry_btn:
+            # Retry permission check
+            if self.force_request_permissions():
+                logger.info("✅ All permissions granted! Continuing...")
+            else:
+                logger.warning("⚠️ Still missing permissions")
+        elif msg.clickedButton() == continue_btn:
+            logger.warning("⚠️ User chose to continue without full permissions")
+    
+    def open_system_preferences(self):
+        """Open macOS System Preferences to relevant permission sections"""
+        try:
+            import subprocess
+            # Try multiple ways to open preferences for different macOS versions
+            commands = [
+                # macOS 13+ (Ventura+)
+                ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy"],
+                # macOS 12 and earlier
+                ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+                # Fallback
+                ["open", "/System/Library/PreferencePanes/Security.prefPane"],
+                ["open", "-b", "com.apple.preference.security"]
+            ]
+            
+            for cmd in commands:
+                try:
+                    subprocess.call(cmd)
+                    logger.info(f"🔗 Opened System Preferences: {' '.join(cmd)}")
+                    break
+                except:
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to open System Preferences: {e}")
         
     def setup_cmd_c_monitoring(self):
         """Setup Cmd+C key monitoring"""
