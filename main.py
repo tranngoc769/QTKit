@@ -533,6 +533,55 @@ class SimpleTimestampViewer(QMainWindow):
         self.show()
         self.raise_()
         self.activateWindow()
+    
+    def show_help(self):
+        """Show help dialog"""
+        msg = QMessageBox()
+        msg.setWindowTitle("QTKit - Hướng dẫn sử dụng")
+        msg.setIcon(QMessageBox.Information)
+        
+        help_text = """🎯 Cách sử dụng QTKit:
+
+1️⃣ Sao chép timestamp:
+   • Nhấn Cmd+C trên timestamp (vd: 1640995200)
+   • QTKit sẽ tự động hiện tooltip với thời gian
+
+2️⃣ Cấu hình:
+   • Right-click vào icon tray → "Mở cấu hình"
+   • Tùy chỉnh hiển thị thập phân
+   • Bật/tắt chế độ detect trong text dài
+
+3️⃣ Cài đặt lần đầu:
+   • Ứng dụng sẽ yêu cầu quyền Accessibility
+   • System Preferences → Security & Privacy → Accessibility
+   • Thêm QTKit vào danh sách
+
+4️⃣ Tìm lại ứng dụng:
+   • Tìm "QTKit" trong Spotlight (Cmd+Space)
+   • Hoặc mở từ Applications folder
+   • Icon sẽ xuất hiện trong system tray"""
+        
+        msg.setText("QTKit - QuickTime Kit")
+        msg.setInformativeText("Công cụ chuyển đổi timestamp thông minh")
+        msg.setDetailedText(help_text)
+        
+        # Show temporarily with dock icon
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+            except ImportError:
+                pass
+        
+        msg.exec_()
+        
+        # Hide dock icon again
+        if sys.platform == "darwin":
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
+            except ImportError:
+                pass
         
     def setup_tray(self):
         """Setup system tray"""
@@ -581,17 +630,34 @@ class SimpleTimestampViewer(QMainWindow):
         # Tray menu
         tray_menu = QMenu()
         
-        config_action = QAction("⚙️ Cấu hình", self)
+        # Main actions
+        config_action = QAction("⚙️ Mở cấu hình", self)
         config_action.triggered.connect(self.show_config)
         tray_menu.addAction(config_action)
         
-        quit_action = QAction("Quit", self)
+        # Add separator
+        tray_menu.addSeparator()
+        
+        # Status and help
+        status_action = QAction("📊 Trạng thái: Đang chạy", self)
+        status_action.setEnabled(False)  # Just for display
+        tray_menu.addAction(status_action)
+        
+        help_action = QAction("❓ Hướng dẫn sử dụng", self)
+        help_action.triggered.connect(self.show_help)
+        tray_menu.addAction(help_action)
+        
+        # Add separator
+        tray_menu.addSeparator()
+        
+        # Quit
+        quit_action = QAction("🚪 Thoát QTKit", self)
         quit_action.triggered.connect(self.quit_app)
         tray_menu.addAction(quit_action)
         
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
-        self.tray_icon.setToolTip("QTKit - QuickTime Kit")
+        self.tray_icon.setToolTip("QTKit - QuickTime Kit\n🎯 Nhấn Cmd+C trên timestamp để xem thời gian\n⚙️ Right-click để cấu hình")
         
     def setup_cmd_c_monitoring(self):
         """Setup Cmd+C key monitoring"""
