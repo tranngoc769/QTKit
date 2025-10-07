@@ -1,0 +1,1 @@
+rm -rf dist build *.spec && python3 build_app.py
