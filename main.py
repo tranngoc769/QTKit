@@ -66,7 +66,7 @@ class SimpleTimestampViewer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.last_clipboard_text = ""
-        self.settings = QSettings("TimestampViewer", "Settings")
+        self.settings = QSettings("QTKit", "Settings")
         self.load_settings()
         self.setup_ui()
         self.setup_tray()
@@ -108,8 +108,8 @@ class SimpleTimestampViewer(QMainWindow):
         
     def setup_ui(self):
         """Setup configuration UI"""
-        self.setWindowTitle("Timestamp Viewer - Cấu hình")
-        self.setGeometry(100, 100, 480, 520)
+        self.setWindowTitle("QTKit - Cấu hình")
+        self.setGeometry(100, 100, 480, 580)
         
         # Set window style
         self.setStyleSheet("""
@@ -161,10 +161,10 @@ class SimpleTimestampViewer(QMainWindow):
         
         # Title
         if hasattr(self, 'first_run') and self.first_run:
-            title = QLabel("🎉 Chào mừng đến với Timestamp Viewer!")
+            title = QLabel("🎉 Chào mừng đến với QTKit!")
             title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 15px;")
         else:
-            title = QLabel("🕐 Timestamp Viewer - Cấu hình")
+            title = QLabel("⚙️ QTKit - Cấu hình")
             title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; margin-bottom: 15px;")
         
         title.setAlignment(Qt.AlignCenter)
@@ -176,7 +176,7 @@ class SimpleTimestampViewer(QMainWindow):
         detect_layout.setSpacing(10)
         detect_layout.setContentsMargins(15, 15, 15, 15)
         
-        self.detect_mode_cb = QCheckBox("✓ Detect timestamp trong clipboard")
+        self.detect_mode_cb = QCheckBox("Detect timestamp trong clipboard")
         self.detect_mode_cb.setChecked(False)  # Not checked by default
         self.detect_mode_cb.toggled.connect(self.on_detect_mode_changed)
         self.detect_mode_cb.setStyleSheet("color: #495057;")
@@ -191,7 +191,6 @@ class SimpleTimestampViewer(QMainWindow):
         info_on = QLabel("• Bật: Tự động tìm timestamp trong text dài")
         info_on.setStyleSheet("color: #495057; font-size: 16px; margin: 2px 0;")
         info_layout.addWidget(info_on)
-        
         info_off = QLabel("• Tắt: Chỉ detect khi toàn bộ clipboard là timestamp")
         info_off.setStyleSheet("color: #495057; font-size: 16px; margin: 2px 0;")
         info_layout.addWidget(info_off)
@@ -212,7 +211,7 @@ class SimpleTimestampViewer(QMainWindow):
         decimal_main_layout.setSpacing(20)
         
         # Left side - Show decimal checkbox
-        self.show_decimal_cb = QCheckBox("✓ Hiển thị phần thập phân")
+        self.show_decimal_cb = QCheckBox("Hiển thị phần thập phân")
         self.show_decimal_cb.setChecked(self.show_decimal)
         self.show_decimal_cb.toggled.connect(self.on_show_decimal_changed)
         self.show_decimal_cb.setStyleSheet("color: #495057;")
@@ -242,7 +241,7 @@ class SimpleTimestampViewer(QMainWindow):
         decimal_layout.addWidget(decimal_main_container)
         
         # Full decimal checkbox
-        self.show_full_decimal_cb = QCheckBox("✓ Hiển thị toàn bộ phần thập phân gốc")
+        self.show_full_decimal_cb = QCheckBox("Hiển thị toàn bộ phần thập phân gốc")
         self.show_full_decimal_cb.setChecked(self.show_full_decimal)
         self.show_full_decimal_cb.toggled.connect(self.on_show_full_decimal_changed)
         self.show_full_decimal_cb.setStyleSheet("color: #495057;")
@@ -258,28 +257,77 @@ class SimpleTimestampViewer(QMainWindow):
         # Add some spacing before trigger info
         layout.addStretch()
         
-        # Trigger and warning info (common for all modes)
+        # Trigger and warning info - minimal style
         trigger_container = QWidget()
         trigger_container.setStyleSheet("""
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                stop:0 #fff3cd, stop:1 #ffeaa7);
-            border: 1px solid #ffeaa7;
-            border-radius: 8px;
-            padding: 12px;
+            background-color: #fff8e1;
+            border-radius: 4px;
         """)
         trigger_layout = QVBoxLayout(trigger_container)
-        trigger_layout.setContentsMargins(15, 12, 15, 12)
-        trigger_layout.setSpacing(8)
+        trigger_layout.setContentsMargins(8, 6, 8, 6)
+        trigger_layout.setSpacing(2)
         
-        info_trigger = QLabel("⌨️ Trigger: Phím Command + C (lấy clipboard)")
-        info_trigger.setStyleSheet("color: #856404; font-size: 16px; font-weight: bold;")
+        info_trigger = QLabel("⌨️ Sử dụng: Command + C")
+        info_trigger.setStyleSheet("color: #f57c00; font-size: 12px; font-weight: bold;")
         trigger_layout.addWidget(info_trigger)
         
-        info_warning = QLabel("⚠️ Lưu ý: Bấm Cmd+C ở bất kỳ đâu sẽ trigger kiểm tra")
-        info_warning.setStyleSheet("color: #856404; font-size: 14px;")
+        info_warning = QLabel("⚠️ Nguyên lý: Theo dõi Cmd+C và kiểm tra clipboard")
+        info_warning.setStyleSheet("color: #f57c00; font-size: 11px;")
         trigger_layout.addWidget(info_warning)
         
         layout.addWidget(trigger_container)
+        
+        # QT Corporation info section with logo
+        qt_corp_container = QWidget()
+        qt_corp_container.setStyleSheet("""
+            background-color: #e3f2fd;
+            border-radius: 6px;
+        """)
+        qt_corp_main_layout = QHBoxLayout(qt_corp_container)
+        qt_corp_main_layout.setContentsMargins(12, 8, 12, 8)
+        qt_corp_main_layout.setSpacing(12)
+        
+        # Logo on the left - bigger size
+        logo_label = QLabel()
+        try:
+            logo_pixmap = QPixmap("ok.png")
+            if not logo_pixmap.isNull():
+                # Scale logo to bigger size (64x64)
+                scaled_logo = logo_pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                logo_label.setPixmap(scaled_logo)
+            else:
+                # Fallback text if logo not found
+                logo_label.setText("📱")
+                logo_label.setStyleSheet("font-size: 40px;")
+        except Exception:
+            # Fallback text if error
+            logo_label.setText("📱")
+            logo_label.setStyleSheet("font-size: 40px;")
+        
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setFixedSize(64, 64)
+        qt_corp_main_layout.addWidget(logo_label)
+        
+        # Text info on the right
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+        
+        corp_title = QLabel("QTKit - QuickTime Kit")
+        corp_title.setStyleSheet("color: #1565c0; font-size: 16px; font-weight: bold;")
+        text_layout.addWidget(corp_title)
+        
+        corp_author = QLabel("by Quang Trần - QT Corporation")
+        corp_author.setStyleSheet("color: #1976d2; font-size: 14px; font-weight: bold;")
+        text_layout.addWidget(corp_author)
+        
+        corp_copyright = QLabel("Copyright © 2025 QT Corporation")
+        corp_copyright.setStyleSheet("color: #90a4ae; font-size: 11px;")
+        text_layout.addWidget(corp_copyright)
+        
+        qt_corp_main_layout.addLayout(text_layout)
+        qt_corp_main_layout.addStretch()  # Push content to left
+        
+        layout.addWidget(qt_corp_container)
         
         # Add some spacing before buttons
         layout.addStretch()
@@ -392,10 +440,21 @@ class SimpleTimestampViewer(QMainWindow):
             
         self.tray_icon = QSystemTrayIcon(self)
         
-        # Simple icon
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.blue)
-        self.tray_icon.setIcon(QIcon(pixmap))
+        # Use ok.png as icon
+        try:
+            icon_path = "ok.png"
+            pixmap = QPixmap(icon_path)
+            if pixmap.isNull():
+                # Fallback to simple icon if ok.png not found
+                pixmap = QPixmap(16, 16)
+                pixmap.fill(Qt.blue)
+            self.tray_icon.setIcon(QIcon(pixmap))
+        except Exception as e:
+            print(f"Error loading icon: {e}")
+            # Fallback to simple icon
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.blue)
+            self.tray_icon.setIcon(QIcon(pixmap))
         
         # Tray menu
         tray_menu = QMenu()
@@ -410,7 +469,7 @@ class SimpleTimestampViewer(QMainWindow):
         
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
-        self.tray_icon.setToolTip("Timestamp Viewer")
+        self.tray_icon.setToolTip("QTKit - QuickTime Kit")
         
     def setup_cmd_c_monitoring(self):
         """Setup Cmd+C key monitoring"""
@@ -626,7 +685,7 @@ def main():
     app = QApplication(sys.argv)
     
     # App settings
-    app.setApplicationName("Simple Timestamp Viewer")
+    app.setApplicationName("QTKit")
     app.setQuitOnLastWindowClosed(False)
     
     # Check for reset flag
@@ -645,7 +704,7 @@ def main():
         except ImportError:
             pass
     
-    print("🚀 Simple Timestamp Viewer started!")
+    print("🚀 QTKit (QuickTime Kit) started!")
     print("📋 Copy any timestamp to see the magic!")
     
     sys.exit(app.exec())
